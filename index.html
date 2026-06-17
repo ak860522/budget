@@ -895,13 +895,13 @@ function GaoyinTab({state,update}){
       <div style={{background:`linear-gradient(135deg,${G[800]} 0%,${G[600]} 100%)`,padding:"14px 15px 12px"}}>
         <div style={{fontSize:11,color:G[200],marginBottom:4,fontWeight:600}}>高雄銀行保險帳戶 — 115年累計</div>
         <div style={{fontSize:10,color:G[300],marginBottom:8}}>天菁・冠葦・Wlison・Wuli 全部自動連動月支出</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
           {persons.map(({name,color})=>{
             const{dep,out,bal}=cumulAll(name);
             return(
               <div key={name} style={{background:"rgba(255,255,255,0.13)",borderRadius:10,padding:"10px 11px"}}>
                 <div style={{fontSize:12,color:"#fff",fontWeight:700,marginBottom:2}}>{name}</div>
-                <AnimNum value={Math.abs(bal)} color={bal>=0?"#c8f0a0":"#f5a0a0"} size={16} bold />
+                <AnimNum value={bal} color={bal>=0?"#c8f0a0":"#f5a0a0"} size={16} bold />
                 <div style={{fontSize:9,color:G[200],marginTop:2}}>
                   累積存 {dep.toLocaleString()} / 累積支 {out.toLocaleString()}
                 </div>
@@ -909,6 +909,23 @@ function GaoyinTab({state,update}){
             );
           })}
         </div>
+        {/* 四人正數合計 */}
+        {(()=>{
+          const positiveTotal=persons.reduce((s,{name})=>{
+            const{bal}=cumulAll(name);
+            return s+(bal>0?bal:0);
+          },0);
+          const hasNegative=persons.some(({name})=>cumulAll(name).bal<0);
+          return(
+            <div style={{background:"rgba(255,255,255,0.18)",borderRadius:10,padding:"10px 13px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{fontSize:11,color:"#fff",fontWeight:600}}>四人帳戶正數合計</div>
+                {hasNegative&&<div style={{fontSize:9,color:G[300],marginTop:1}}>（負數帳戶已排除，不計入）</div>}
+              </div>
+              <AnimNum value={positiveTotal} color="#c8f0a0" size={18} bold />
+            </div>
+          );
+        })()}
       </div>
 
       <div style={{padding:"9px 15px 2px",fontSize:11,color:G.muted}}>
