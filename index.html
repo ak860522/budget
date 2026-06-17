@@ -1,0 +1,1754 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="家庭記帳"/>
+<title>115年家庭記帳</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;padding:0;background:#f6f8f4;font-family:system-ui,-apple-system,sans-serif;}
+  input,button,textarea,select{font-family:inherit;}
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+// ═══════════════════════════════════════════════════════
+// 色系 — 深森林綠
+// ═══════════════════════════════════════════════════════
+const G = {
+  900:"#1a3a0f",800:"#22500a",700:"#2d6b0d",
+  600:"#3a7d16",500:"#4a8f20",400:"#6aae40",
+  300:"#8ec96a",200:"#bde09f",100:"#e4f5d4",50:"#f4fbee",
+  bg:"#f6f8f4",card:"#ffffff",border:"#d4e3c8",
+  text:"#1a2e12",sub:"#5a7048",muted:"#8fa87a",
+};
+const RED="#8b2020"; const AMB="#7a5010"; const AMBBG="#fdf6ee"; const BLU="#1a4a7a";
+
+// ═══════════════════════════════════════════════════════
+// 月份清單
+// ═══════════════════════════════════════════════════════
+const MONTHS_115 = ["115/01","115/02","115/03","115/04","115/05","115/06",
+                    "115/07","115/08","115/09","115/10","115/11","115/12"];
+
+// ═══════════════════════════════════════════════════════
+// 資料結構：每月
+// income   = 本月收入各欄
+// expense  = 實際支出（信用卡、學費、房貸、車貸…）
+// reserve  = 當月撥入預存金（中信/土銀/郵局）
+// checked  = 各欄打勾狀態
+// note     = 月底備註
+// ═══════════════════════════════════════════════════════
+const BLANK_MONTH = () => ({
+  income:  { 天:0, 吳:0, 蝦皮:0, Wuli托育:0, Wlison托育:0, 其他:0 },
+  expense: {
+    生活費天菁:0, 生活費冠葦:0,
+    中信天:0, 天土銀:0, 吳土銀:0, 第一吳:0, 元大:0, 富邦:0,
+    兒子學費諺:0, 朔轉帳:0,
+    停車天菁:0, 停車冠葦:0,
+    天菁電話費:0, 冠葦電話費:0, 網路費:0, 水費:0, 電費:0,
+    保費天菁:0, 保費冠葦:0, 保費Wuli:0, 保費Wlison:0,
+    房貸土銀:0, 管理費:0,
+    車貸天菁:0, 車貸冠葦:0,
+    小孩存款:0, 稅金:0, 汽車保養費:0,
+    信貸:0, 其他:0,
+  },
+  reserve: {
+    中信月存:0,       // → 天菁中信累積
+    土銀月存:0,       // → 天菁土銀累積（停車/保養/稅金）
+    冠葦土銀月存:0,   // → 冠葦土銀（稅金3370+保養3700）
+    郵局月存:0,       // → 冠葦郵局（小孩存款）
+  },
+  checked: {},
+  note: "",
+});
+
+const BLANK_GAOYIN = () => ({
+  天菁存:0,天菁出:0,冠葦存:0,冠葦出:0,
+  東朔存:0,東朔出:0,昕諺存:0,昕諺出:0,總金額:0,
+});
+
+// 預存金累積帳戶初始（全年追蹤，不分月）
+const BLANK_RESERVE = () => ({
+  中信:    { 應存目標:0, usedItems:[] },
+  天菁土銀: { 應存目標:0, usedItems:[] },
+  冠葦土銀: { 應存目標:0, usedItems:[] },
+  冠葦郵局: { 應存目標:0, usedItems:[] },
+});
+
+// 各帳戶可選項目（下拉選單）
+const ACCT_ITEMS = {
+  中信:    ["天菁電話費","冠葦電話費","網路費","水費","電費","其他"],
+  天菁土銀: ["停車費（天菁）","停車費（冠葦）","管理費","住屋裝修","其他"],
+  冠葦土銀: ["牌照稅-3320","牌照稅-8660","燃料稅-3320","燃料稅-8660","汽車保養-3320","汽車保養-8660","其他"],
+  冠葦郵局: ["Wuli存款","Wlison存款","Wuli註冊費","Wlison保母紅包","其他"],
+};
+
+const INIT = {
+  currentMonth: "115/01",
+  monthlyData:  Object.fromEntries(MONTHS_115.map(m=>[m,BLANK_MONTH()])),
+  gaoyinMonths: Object.fromEntries(MONTHS_115.map(m=>[m,BLANK_GAOYIN()])),
+  reserveAccounts: BLANK_RESERVE(),
+  debts: [],
+  creditCards: { "中信（天）":[], "天土銀":[], "吳一銀":[], "吳土銀":[], "元大":[], "富邦（不含保費）":[] },
+  insurance: [],
+  car: {
+    "BJR-3320":{ 牌照稅:0,牌照月:"4月",燃料稅:0,燃料月:"7月",保養金額:0,保養頻率:2 },
+    "BQU-8660":{ 牌照稅:0,牌照月:"4月",燃料稅:0,燃料月:"7月",保養金額:0,保養頻率:2 },
+    "停車-8660":{ 金額:0,合約:"",到期日:"",繳費:"半年繳",下次:"" },
+    "停車-3320":{ 金額:0,合約:"",到期日:"",繳費:"半年繳",下次:"" },
+  },
+  yearlyData: {},
+};
+
+// ═══════════════════════════════════════════════════════
+// AnimNum — 滾動入場數字
+// ═══════════════════════════════════════════════════════
+function AnimNum({ value, color, size=16, bold=true, prefix="NT$" }) {
+  const [disp,setDisp] = useState(value);
+  const prev = useRef(value);
+  const raf  = useRef(null);
+  useEffect(()=>{
+    if(prev.current===value) return;
+    const start=prev.current; prev.current=value;
+    const t0=performance.now();
+    const dur=480;
+    const run=(now)=>{
+      const p=Math.min((now-t0)/dur,1);
+      const e=1-Math.pow(1-p,3);
+      setDisp(Math.round(start+(value-start)*e));
+      if(p<1) raf.current=requestAnimationFrame(run);
+      else setDisp(value);
+    };
+    if(raf.current) cancelAnimationFrame(raf.current);
+    raf.current=requestAnimationFrame(run);
+    return ()=>{ if(raf.current) cancelAnimationFrame(raf.current); };
+  },[value]);
+  return <span style={{fontSize:size,fontWeight:bold?700:400,color,letterSpacing:"-0.01em"}}>
+    {disp<0?"-":""}{prefix}{Math.abs(disp).toLocaleString()}
+  </span>;
+}
+
+// ═══════════════════════════════════════════════════════
+// 共用 UI 零件
+// ═══════════════════════════════════════════════════════
+const Card=({children,style})=>(
+  <div style={{background:G.card,border:`1px solid ${G.border}`,borderRadius:13,padding:"13px 15px",...style}}>{children}</div>
+);
+const Sec=({title,color=G[600],children})=>(
+  <div style={{marginBottom:14}}>
+    <div style={{fontSize:10,fontWeight:700,color,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6,padding:"0 15px"}}>{title}</div>
+    {children}
+  </div>
+);
+const Divider=()=><div style={{height:1,background:G.border,margin:"6px 0"}}/>;
+
+function NI({value,onChange,label,style,placeholder}){
+  // local string state：讓使用者可以連續輸入，onBlur 才 commit
+  const [local,setLocal]=useState(value===0?"":String(value));
+  const focused=useRef(false);
+  useEffect(()=>{
+    if(!focused.current) setLocal(value===0?"":String(value));
+  },[value]);
+  return(
+    <div style={{flex:1,...style}}>
+      {label&&<div style={{fontSize:11,color:G.sub,marginBottom:3,fontWeight:600}}>{label}</div>}
+      <div style={{display:"flex",alignItems:"center",border:`1.5px solid ${G.border}`,borderRadius:9,overflow:"hidden",background:"#fff"}}>
+        <span style={{padding:"8px 6px 8px 9px",fontSize:11,color:G.muted,background:G[50],borderRight:`1px solid ${G.border}`,flexShrink:0}}>NT$</span>
+        <input
+          type="number"
+          inputMode="numeric"
+          value={local}
+          placeholder={placeholder||"0"}
+          onFocus={()=>{ focused.current=true; }}
+          onChange={e=>setLocal(e.target.value)}
+          onBlur={e=>{
+            focused.current=false;
+            const n=Number(e.target.value)||0;
+            setLocal(n===0?"":String(n));
+            onChange(n);
+          }}
+          style={{flex:1,border:"none",padding:"8px 9px",fontSize:15,background:"#fff",color:G.text,outline:"none",minWidth:0}}
+        />
+      </div>
+    </div>
+  );
+}
+function TI({value,onChange,placeholder,rows,style}){
+  if(rows) return(
+    <textarea value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} rows={rows}
+      style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${G.border}`,borderRadius:9,fontSize:14,background:"#fff",color:G.text,outline:"none",resize:"vertical",fontFamily:"inherit",boxSizing:"border-box",...style}}/>
+  );
+  return(
+    <input type="text" value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
+      style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${G.border}`,borderRadius:9,fontSize:14,background:"#fff",color:G.text,outline:"none",boxSizing:"border-box",...style}}/>
+  );
+}
+function Btn({children,onClick,color=G[700],outline,full,style}){
+  return(
+    <button onClick={onClick} style={{
+      padding:"9px 14px",border:outline?`1.5px solid ${color}`:"none",
+      background:outline?"transparent":color,color:outline?color:"#fff",
+      borderRadius:9,fontSize:14,fontWeight:700,cursor:"pointer",
+      width:full?"100%":"auto",transition:"all 0.18s",...style,
+    }}>{children}</button>
+  );
+}
+
+// 打勾元件
+function Chk({checked,onChange,label,color=G[700]}){
+  return(
+    <button onClick={()=>onChange(!checked)} style={{
+      display:"flex",alignItems:"center",gap:7,background:"none",border:"none",
+      cursor:"pointer",padding:"3px 0",width:"100%",textAlign:"left",
+    }}>
+      <div style={{
+        width:20,height:20,borderRadius:6,flexShrink:0,
+        border:`2px solid ${checked?color:G.border}`,
+        background:checked?color:"#fff",
+        display:"flex",alignItems:"center",justifyContent:"center",
+        transition:"all 0.15s",
+      }}>
+        {checked&&<span style={{color:"#fff",fontSize:12,fontWeight:900,lineHeight:1}}>✓</span>}
+      </div>
+      <span style={{fontSize:13,color:checked?color:G.sub,fontWeight:checked?700:400,transition:"all 0.15s",textDecoration:checked?"line-through":"none"}}>{label}</span>
+    </button>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// Banner 頂部結算
+// ═══════════════════════════════════════════════════════
+function Banner({totalIn,totalOut,month}){
+  const remain=totalIn-totalOut;
+  return(
+    <div style={{background:`linear-gradient(135deg,${G[800]} 0%,${G[600]} 100%)`,padding:"16px 15px 14px"}}>
+      <div style={{fontSize:11,color:G[200],marginBottom:3,fontWeight:600,letterSpacing:"0.04em"}}>{month} 月 收支總覽</div>
+      <div style={{display:"flex",gap:8,marginTop:8}}>
+        {[["總收入",totalIn,"#bdf0d0"],["支出合計",-totalOut,"#f5c0b0"],["結餘",remain,remain>=0?"#c8f0a0":"#f5a0a0"]].map(([l,v,c])=>(
+          <div key={l} style={{flex:1,background:"rgba(255,255,255,0.12)",borderRadius:9,padding:"8px 6px",textAlign:"center"}}>
+            <div style={{fontSize:9,color:G[200],marginBottom:3,fontWeight:600}}>{l}</div>
+            <AnimNum value={v} color={c} size={13} bold />
+          </div>
+        ))}
+      </div>
+      <div style={{marginTop:10,display:"flex",alignItems:"center",gap:8}}>
+        <span style={{fontSize:11,color:G[200]}}>當月結餘</span>
+        <AnimNum value={remain} color={remain>=0?"#c8f0a0":"#f5a0a0"} size={22} bold />
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// MonthPicker
+// ═══════════════════════════════════════════════════════
+function MonthPicker({current,onChange}){
+  const idx=MONTHS_115.indexOf(current);
+  const btn=(dir,en)=>(
+    <button onClick={()=>en&&onChange(MONTHS_115[idx+dir])}
+      style={{width:32,height:32,borderRadius:"50%",border:`1px solid ${G.border}`,
+        background:en?G[50]:"#f5f5f5",color:en?G[700]:G.muted,
+        fontSize:18,cursor:en?"pointer":"default",
+        display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+      {dir<0?"‹":"›"}
+    </button>
+  );
+  return(
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:G.card,borderBottom:`1px solid ${G.border}`,padding:"9px 15px"}}>
+      {btn(-1,idx>0)}
+      <div style={{fontSize:15,fontWeight:700,color:G.text}}>民國 {current.replace("/"," 年 ")} 月</div>
+      {btn(1,idx<MONTHS_115.length-1)}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// 月支出 分頁 — 完整收入分配表
+// ═══════════════════════════════════════════════════════
+function MonthlyTab({state,update}){
+  const m=state.currentMonth;
+  const data=state.monthlyData[m]||BLANK_MONTH();
+  const {income,expense,reserve,checked,note}=data;
+
+  // 通用 setter
+  const setField=(section,key,val)=>{
+    const next={...state.monthlyData,[m]:{...data,[section]:{...data[section],[key]:val}}};
+    update("monthlyData",next);
+  };
+  const setChecked=(key,val)=>setField("checked",key,val);
+  const setNote=(val)=>{
+    const next={...state.monthlyData,[m]:{...data,note:val}};
+    update("monthlyData",next);
+  };
+
+  // 合計
+  const totalIn  = Object.values(income).reduce((s,v)=>s+v,0);
+  const totalOut = Object.values(expense).reduce((s,v)=>s+v,0);
+  const totalRes = Object.values(reserve).reduce((s,v)=>s+v,0);
+
+  // Row_ 為 inline helper（非 component），直接 return JSX array
+  const Row_=({k,label,section="expense"})=>{
+    const val = section==="expense" ? (expense[k]||0) : section==="reserve" ? (reserve[k]||0) : (income[k]||0);
+    const ck  = checked[k]||false;
+    return(
+      <div key={k} style={{display:"grid",gridTemplateColumns:"1fr 28px",alignItems:"end",gap:8,marginBottom:9}}>
+        <NI label={label} value={val} onChange={v=>setField(section,k,v)} />
+        <div style={{paddingBottom:2,display:"flex",justifyContent:"center"}}>
+          <button onClick={()=>setChecked(k,!ck)} style={{
+            width:26,height:26,borderRadius:7,flexShrink:0,
+            border:`2px solid ${ck?G[600]:G.border}`,
+            background:ck?G[600]:"#fff",
+            display:"flex",alignItems:"center",justifyContent:"center",
+            cursor:"pointer",transition:"all 0.15s",
+          }}>{ck&&<span style={{color:"#fff",fontSize:12,fontWeight:900,lineHeight:1}}>✓</span>}</button>
+        </div>
+      </div>
+    );
+  };
+
+  const SubTotal=({items,section="expense",color=G.sub})=>{
+    const total=items.reduce((s,k)=>{
+      const v=section==="expense"?(expense[k]||0):section==="reserve"?(reserve[k]||0):(income[k]||0);
+      return s+v;
+    },0);
+    return(
+      <div style={{display:"flex",justifyContent:"space-between",borderTop:`1px solid ${G.border}`,paddingTop:7,marginTop:3}}>
+        <span style={{fontSize:12,color:G.muted,fontWeight:600}}>小計</span>
+        <AnimNum value={total} color={color} size={14} bold />
+      </div>
+    );
+  };
+
+  return(
+    <div style={{paddingBottom:28}}>
+      <MonthPicker current={m} onChange={v=>update("currentMonth",v)} />
+      <Banner totalIn={totalIn} totalOut={totalOut} totalReserve={totalRes} month={m} />
+
+      {/* ── 收入 ── */}
+      <Sec title="💰 收入" color={G[700]}>
+        <Card style={{margin:"6px 14px"}}>
+          {[["天","薪資（天）"],["吳","薪資（吳）"],["蝦皮","蝦皮兼職"],["Wuli托育","Wuli托育費"],["Wlison托育","Wlison托育費"],["其他","其他收入"]].map(([k,l])=>(
+            <Row_ key={k} k={k} label={l} section="income" />
+          ))}
+          <SubTotal items={["天","吳","蝦皮","Wuli托育","Wlison托育","其他"]} section="income" color={G[700]} />
+        </Card>
+      </Sec>
+
+      {/* ── 生活費 ── */}
+      <Sec title="🏠 生活費" color={G[700]}>
+        <Card style={{margin:"6px 14px"}}>
+          <Row_ k="生活費天菁" label="生活費（天菁）" />
+          <Row_ k="生活費冠葦" label="生活費（冠葦）" />
+          <SubTotal items={["生活費天菁","生活費冠葦"]} />
+        </Card>
+      </Sec>
+
+      {/* ── 信用卡 ── */}
+      <Sec title="💳 信用卡費" color={BLU}>
+        <Card style={{margin:"6px 14px"}}>
+          <Row_ k="中信天"  label="中信（天）" />
+          <Row_ k="天土銀"  label="天土銀" />
+          <Row_ k="吳土銀"  label="吳土銀" />
+          <Row_ k="第一吳"  label="第一（吳，不含學費）" />
+          <Row_ k="元大"    label="元大" />
+          <Row_ k="富邦"    label="富邦（不含保費）" />
+          <SubTotal items={["中信天","天土銀","吳土銀","第一吳","元大","富邦"]} color={BLU} />
+        </Card>
+      </Sec>
+
+      {/* ── 兒子學費 ── */}
+      <Sec title="🎓 兒子學費" color={AMB}>
+        <Card style={{margin:"6px 14px"}}>
+          <Row_ k="兒子學費諺" label="諺（信用卡）" />
+          <Row_ k="朔轉帳"     label="朔（轉帳）" />
+          <SubTotal items={["兒子學費諺","朔轉帳"]} color={AMB} />
+        </Card>
+      </Sec>
+
+      {/* ── 停車費＋管理費→天菁土銀預存金 ── */}
+      <Sec title="🅿 停車費・管理費 → 天菁土銀預存金" color={G[700]}>
+        <Card style={{margin:"6px 14px"}}>
+          <Row_ k="停車天菁" label="停車費（天菁）" />
+          <Row_ k="停車冠葦" label="停車費（冠葦）" />
+          <Row_ k="管理費"   label="管理費（預存）" />
+          <SubTotal items={["停車天菁","停車冠葦","管理費"]} color={G[700]} />
+        </Card>
+      </Sec>
+
+      {/* ── 生活雜支→中信預存金 ── */}
+      <Sec title="📲 生活雜支 → 中信預存金" color={G[600]}>
+        <Card style={{margin:"6px 14px"}}>
+          <Row_ k="天菁電話費" label="天菁電話費" />
+          <Row_ k="冠葦電話費" label="冠葦電話費" />
+          <Row_ k="網路費"     label="網路費" />
+          <Row_ k="水費"       label="水費" />
+          <Row_ k="電費"       label="電費" />
+          <SubTotal items={["天菁電話費","冠葦電話費","網路費","水費","電費"]} color={G[600]} />
+        </Card>
+      </Sec>
+
+      {/* ── 保險費→高銀 ── */}
+      <Sec title="🛡 保險費 → 高銀預存金" color={RED}>
+        <Card style={{margin:"6px 14px"}}>
+          <Row_ k="保費天菁"   label="天菁" />
+          <Row_ k="保費冠葦"   label="冠葦" />
+          <Row_ k="保費Wuli"   label="Wuli" />
+          <Row_ k="保費Wlison" label="Wlison" />
+          <SubTotal items={["保費天菁","保費冠葦","保費Wuli","保費Wlison"]} color={RED} />
+        </Card>
+      </Sec>
+
+      {/* ── 房子→土銀 ── */}
+      <Sec title="🏦 房貸 → 土銀" color={G.sub}>
+        <Card style={{margin:"6px 14px"}}>
+          <Row_ k="房貸土銀" label="房貸（土銀自動扣）" />
+          <SubTotal items={["房貸土銀"]} />
+        </Card>
+      </Sec>
+
+      {/* ── 車貸 ── */}
+      <Sec title="🚗 車貸" color={AMB}>
+        <Card style={{margin:"6px 14px"}}>
+          <Row_ k="車貸天菁" label="天菁" />
+          <Row_ k="車貸冠葦" label="冠葦" />
+          <SubTotal items={["車貸天菁","車貸冠葦"]} color={AMB} />
+        </Card>
+      </Sec>
+
+      {/* ── 冠葦土銀預存金（稅金＋保養） ── */}
+      <Sec title="🏦 稅金・保養 → 冠葦土銀預存金" color={AMB}>
+        <Card style={{margin:"6px 14px"}}>
+          <Row_ k="稅金"     label="稅金（3,370）" />
+          <Row_ k="汽車保養費" label="汽車保養費（3,700）" />
+          <SubTotal items={["稅金","汽車保養費"]} color={AMB} />
+        </Card>
+      </Sec>
+
+      {/* ── 冠葦郵局預存金（小孩存款） ── */}
+      <Sec title="📮 小孩存款 → 冠葦郵局預存金" color={G[600]}>
+        <Card style={{margin:"6px 14px"}}>
+          <Row_ k="小孩存款" label="小孩存款（冠葦郵局）" />
+          <SubTotal items={["小孩存款"]} color={G[600]} />
+        </Card>
+      </Sec>
+
+      {/* ── 其他 ── */}
+      <Sec title="📦 其他" color={G.muted}>
+        <Card style={{margin:"6px 14px"}}>
+          <Row_ k="信貸" label="信貸" />
+          <Row_ k="其他" label="其他" />
+          <SubTotal items={["信貸","其他"]} />
+        </Card>
+      </Sec>
+
+
+
+      {/* ── 月底結算 ── */}
+      <Sec title="📊 月底結算" color={G[800]}>
+        <Card style={{margin:"6px 14px",background:G[50],border:`1.5px solid ${G[400]}`}}>
+          {[
+            ["本月收入", totalIn,  G[700]],
+            ["支出合計",-totalOut, RED   ],
+          ].map(([l,v,c])=>(
+            <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`0.5px solid ${G.border}`}}>
+              <span style={{fontSize:13,color:G.sub}}>{l}</span>
+              <AnimNum value={v} color={c} size={14} bold />
+            </div>
+          ))}
+          <div style={{display:"flex",justifyContent:"space-between",paddingTop:10,marginTop:4}}>
+            <span style={{fontSize:15,fontWeight:700,color:G.text}}>當月結餘</span>
+            <AnimNum value={totalIn-totalOut} color={totalIn-totalOut>=0?G[700]:RED} size={20} bold
+              />
+          </div>
+        </Card>
+      </Sec>
+
+      {/* ── 備註 ── */}
+      <Sec title="📝 本月備註" color={G.sub}>
+        <Card style={{margin:"6px 14px"}}>
+          <TI value={note||""} onChange={setNote} placeholder="記錄本月特殊事項、待辦、提醒…" rows={4} />
+        </Card>
+      </Sec>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// 使用記錄列表（可收合展開）
+// ═══════════════════════════════════════════════════════
+function RecordsList({usedItems,color,onDel}){
+  const[open,setOpen]=useState(false);
+  const total=usedItems.reduce((s,i)=>s+i.金額,0);
+  return(
+    <div style={{marginBottom:10}}>
+      {/* 收合標題列 */}
+      <button onClick={()=>setOpen(v=>!v)} style={{
+        width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",
+        background:"none",border:"none",padding:"6px 0",cursor:"pointer",
+        borderBottom:`0.5px solid ${G.border}`,marginBottom:open?0:0,
+      }}>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontSize:10,fontWeight:700,color:G.sub}}>使用記錄</span>
+          <span style={{fontSize:10,background:color+"22",color,padding:"1px 7px",borderRadius:99,fontWeight:600}}>
+            {usedItems.length} 筆
+          </span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:12,fontWeight:700,color:RED}}>-NT${total.toLocaleString()}</span>
+          <span style={{fontSize:12,color:G.muted,transition:"transform 0.2s",
+            display:"inline-block",transform:open?"rotate(180deg)":"rotate(0deg)"}}>▼</span>
+        </div>
+      </button>
+
+      {/* 展開內容 */}
+      {open&&(
+        <div style={{borderLeft:`2px solid ${color}33`,marginLeft:4,paddingLeft:8,marginTop:4}}>
+          {usedItems.map((item,i)=>(
+            <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+              padding:"7px 0",borderBottom:`0.5px solid ${G.border}`}}>
+              <div>
+                <span style={{fontSize:12,color,fontWeight:600,marginRight:6}}>{item.項目}</span>
+                {item.說明&&<span style={{fontSize:11,color:G.muted}}>{item.說明}</span>}
+                <div style={{fontSize:10,color:G.muted,marginTop:1}}>{item.日期}</div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                <span style={{fontSize:13,fontWeight:700,color:RED}}>-{item.金額.toLocaleString()}</span>
+                <button onClick={()=>onDel(i)} style={{fontSize:12,color:RED,background:"none",border:"none",cursor:"pointer",padding:"0 2px"}}>✕</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// 使用明細子元件（每個預存帳戶共用）
+// ═══════════════════════════════════════════════════════
+function UsedItemsSection({acctId,color,usedItems,itemOptions,usedByItem,onAdd,onDel}){
+  const[selItem,setSelItem]=useState(itemOptions[0]||"");
+  const[amt,setAmt]=useState(0);
+  const[note,setNote]=useState("");
+  const[localAmt,setLocalAmt]=useState("");
+
+  const handleAdd=()=>{
+    if(!amt||!selItem) return;
+    onAdd({項目:selItem,金額:amt,說明:note,日期:new Date().toLocaleDateString("zh-TW",{month:"2-digit",day:"2-digit"})});
+    setAmt(0); setLocalAmt(""); setNote("");
+  };
+
+  return(
+    <div>
+      {/* 各項目累計小字（按下拉項目分類） */}
+      <div style={{padding:"8px 10px",background:G[50],borderRadius:9,border:`1px solid ${G[100]}`,marginBottom:10}}>
+        <div style={{fontSize:10,fontWeight:700,color:G.sub,marginBottom:5}}>各項目使用累計</div>
+        <div style={{display:"flex",flexDirection:"column",gap:3}}>
+          {itemOptions.map(item=>{
+            const v=usedByItem[item]||0;
+            return(
+              <div key={item} style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:11,color:G.sub}}>{item}</span>
+                <span style={{fontSize:11,fontWeight:v>0?700:400,color:v>0?color:G.muted}}>
+                  {v>0?`NT$${v.toLocaleString()}`:"－"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 已使用明細列表 — 預設收合 */}
+      {usedItems.length>0&&(
+        <RecordsList usedItems={usedItems} color={color} onDel={onDel}/>
+      )}
+
+      {/* 新增使用記錄 */}
+      <div style={{background:"#f9fafb",border:`1px solid ${G.border}`,borderRadius:9,padding:"10px 10px"}}>
+        <div style={{fontSize:11,fontWeight:700,color:G.sub,marginBottom:8}}>＋ 新增使用記錄</div>
+        {/* 下拉選單 */}
+        <div style={{marginBottom:8}}>
+          <div style={{fontSize:11,color:G.sub,fontWeight:600,marginBottom:3}}>使用項目</div>
+          <select value={selItem} onChange={e=>setSelItem(e.target.value)}
+            style={{width:"100%",padding:"8px 10px",border:`1.5px solid ${G.border}`,borderRadius:9,
+              fontSize:14,background:"#fff",color:G.text,outline:"none"}}>
+            {itemOptions.map(o=><option key={o} value={o}>{o}</option>)}
+          </select>
+        </div>
+        {/* 金額 */}
+        <div style={{display:"flex",gap:8,marginBottom:8}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:11,color:G.sub,fontWeight:600,marginBottom:3}}>金額</div>
+            <div style={{display:"flex",alignItems:"center",border:`1.5px solid ${G.border}`,borderRadius:9,overflow:"hidden",background:"#fff"}}>
+              <span style={{padding:"8px 6px 8px 9px",fontSize:11,color:G.muted,background:G[50],borderRight:`1px solid ${G.border}`,flexShrink:0}}>NT$</span>
+              <input type="number" inputMode="numeric" value={localAmt}
+                onChange={e=>{setLocalAmt(e.target.value);}}
+                onBlur={e=>{const n=Number(e.target.value)||0;setAmt(n);setLocalAmt(n===0?"":String(n));}}
+                placeholder="0"
+                style={{flex:1,border:"none",padding:"8px 9px",fontSize:15,background:"#fff",color:G.text,outline:"none",minWidth:0}}/>
+            </div>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:11,color:G.sub,fontWeight:600,marginBottom:3}}>說明（選填）</div>
+            <input type="text" value={note} onChange={e=>setNote(e.target.value)}
+              placeholder="備注"
+              style={{width:"100%",padding:"9px 10px",border:`1.5px solid ${G.border}`,borderRadius:9,
+                fontSize:13,background:"#fff",color:G.text,outline:"none",boxSizing:"border-box"}}/>
+          </div>
+        </div>
+        <button onClick={handleAdd} style={{
+          width:"100%",padding:"9px",background:color,border:"none",borderRadius:9,
+          color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",
+        }}>記錄使用</button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// 預存金 分頁 — 累積追蹤（應存/已使用/剩餘）
+// ═══════════════════════════════════════════════════════
+function PreDeposit({state,update}){
+  const ra=state.reserveAccounts;
+  const setRA=(acct,k,v)=>update("reserveAccounts",{...ra,[acct]:{...ra[acct],[k]:v}});
+
+  // 從各月 expense 直接加總對應欄位 — 完全自動連動月支出
+  const sumExp=(mo, keys)=>{
+    const exp=(state.monthlyData[mo]||BLANK_MONTH()).expense;
+    return keys.reduce((s,k)=>s+(exp[k]||0),0);
+  };
+
+  // 各帳戶對應月支出欄位
+  const accts=[
+    {
+      id:"中信", label:"天菁中信", sub:"生活雜支預存金", color:BLU,
+      expKeys:["天菁電話費","冠葦電話費","網路費","水費","電費"],
+      desc:"天菁電話費、冠葦電話費、網路費、水費、電費",
+    },
+    {
+      id:"天菁土銀", label:"天菁土銀", sub:"停車費、管理費", color:G[700],
+      expKeys:["停車天菁","停車冠葦","管理費"],
+      desc:"停車費（天菁）、停車費（冠葦）、管理費",
+    },
+    {
+      id:"冠葦土銀", label:"冠葦土銀", sub:"稅金 3,370 + 保養 3,700", color:AMB,
+      expKeys:["稅金","汽車保養費"],
+      desc:"稅金（3,370）、汽車保養費（3,700）",
+    },
+    {
+      id:"冠葦郵局", label:"冠葦郵局", sub:"小孩存款", color:G[600],
+      expKeys:["小孩存款"],
+      desc:"小孩存款",
+    },
+  ];
+
+  // 各月各帳戶金額（從 expense 讀取）
+  const monthlyByAcct=(acctId)=>{
+    const a=accts.find(x=>x.id===acctId);
+    return MONTHS_115.map(mo=>({mo, v:sumExp(mo, a.expKeys)}));
+  };
+
+  // 全年累積存入
+  const totalDeposited=(acctId)=>monthlyByAcct(acctId).reduce((s,x)=>s+x.v,0);
+
+  // usedItems 加總
+  const totalUsed=(acctId)=>(ra[acctId]?.usedItems||[]).reduce((s,i)=>s+i.金額,0);
+
+  // 頂部總覽
+  const headerItems=accts.map(a=>{
+    const dep=totalDeposited(a.id);
+    const used=totalUsed(a.id);
+    return{...a, dep, used, remain:dep-used};
+  });
+
+  return(
+    <div style={{paddingBottom:28}}>
+      {/* 總覽 header */}
+      <div style={{background:`linear-gradient(135deg,${G[800]} 0%,${G[600]} 100%)`,padding:"14px 15px 14px"}}>
+        <div style={{fontSize:11,color:G[200],marginBottom:8,fontWeight:600}}>
+          預存金帳戶 — 自動讀取月支出對應欄位
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          {headerItems.map(a=>(
+            <div key={a.id} style={{background:"rgba(255,255,255,0.13)",borderRadius:10,padding:"10px 11px"}}>
+              <div style={{fontSize:11,color:"#fff",fontWeight:700}}>{a.label}</div>
+              <div style={{fontSize:9,color:G[200],marginBottom:4}}>{a.sub}</div>
+              <AnimNum value={a.remain} color={a.remain>=0?"#c8f0a0":"#f5a0a0"} size={16} bold />
+              <div style={{fontSize:9,color:G[200],marginTop:2}}>已存 {a.dep.toLocaleString()} / 已用 {a.used.toLocaleString()}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{padding:"9px 15px 4px",fontSize:11,color:G.muted,lineHeight:1.5}}>
+        💡 「已累積存入」自動從月支出加總。「使用記錄」請選擇項目後逐筆記錄，各項目累計自動更新。
+      </div>
+
+      {/* 各帳戶詳細 */}
+      {accts.map(a=>{
+        const dep=totalDeposited(a.id);
+        const usedItems=ra[a.id]?.usedItems||[];
+        const used=usedItems.reduce((s,i)=>s+i.金額,0);
+        const target=ra[a.id]?.應存目標||0;
+        const remain=dep-used;
+        const pct=dep>0?Math.min(Math.round(used/dep*100),100):0;
+        const monthly=monthlyByAcct(a.id);
+
+        // 各項目已使用加總（從 usedItems 的 項目 欄位）
+        const itemOptions=ACCT_ITEMS[a.id]||[];
+        const usedByItem=itemOptions.reduce((acc,item)=>{
+          acc[item]=usedItems.filter(i=>i.項目===item).reduce((s,i)=>s+i.金額,0);
+          return acc;
+        },{});
+
+        return(
+          <Sec key={a.id} title={`${a.label}（${a.sub}）`} color={a.color}>
+            <Card style={{margin:"6px 14px"}}>
+
+              {/* 三欄統計 */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
+                <div>
+                  <div style={{fontSize:10,color:G.sub,fontWeight:600,marginBottom:3}}>應存目標</div>
+                  <div style={{display:"flex",border:`1.5px solid ${G.border}`,borderRadius:8,overflow:"hidden",background:"#fff"}}>
+                    <input type="number" value={target||""}
+                      onChange={e=>setRA(a.id,"應存目標",Number(e.target.value))}
+                      style={{flex:1,border:"none",padding:"5px 7px",fontSize:13,background:"#fff",color:G.text,outline:"none",minWidth:0}}/>
+                  </div>
+                </div>
+                <div>
+                  <div style={{fontSize:10,color:G.sub,fontWeight:600,marginBottom:3}}>已累積存入</div>
+                  <div style={{fontSize:15,fontWeight:700,color:a.color,paddingTop:4}}>
+                    NT${dep.toLocaleString()}
+                  </div>
+                  <div style={{fontSize:9,color:G.muted}}>← 自動加總</div>
+                </div>
+                <div>
+                  <div style={{fontSize:10,color:G.sub,fontWeight:600,marginBottom:3}}>已使用</div>
+                  <div style={{fontSize:15,fontWeight:700,color:RED,paddingTop:4}}>
+                    NT${used.toLocaleString()}
+                  </div>
+                  <div style={{fontSize:9,color:G.muted}}>← 明細加總</div>
+                </div>
+              </div>
+
+              {/* 剩餘可用 */}
+              <div style={{background:remain>=0?G[50]:AMBBG,border:`1px solid ${remain>=0?G[200]:AMB+"55"}`,borderRadius:9,padding:"9px 12px",marginBottom:12}}>
+                <div style={{fontSize:10,color:G.sub,marginBottom:2}}>剩餘可用</div>
+                <AnimNum value={remain} color={remain>=0?G[700]:RED} size={18} bold />
+                <div style={{marginTop:6,height:5,background:G[100],borderRadius:3}}>
+                  <div style={{height:5,borderRadius:3,width:pct+"%",
+                    background:pct>=90?RED:pct>=70?AMB:a.color,transition:"width 0.5s ease"}}/>
+                </div>
+                <div style={{fontSize:10,color:G.muted,marginTop:3}}>已使用 {pct}%</div>
+              </div>
+
+              {/* ── 使用明細記錄 ── */}
+              <UsedItemsSection
+                acctId={a.id}
+                color={a.color}
+                usedItems={usedItems}
+                itemOptions={itemOptions}
+                usedByItem={usedByItem}
+                onAdd={(newItem)=>setRA(a.id,"usedItems",[...usedItems,newItem])}
+                onDel={(idx)=>setRA(a.id,"usedItems",usedItems.filter((_,i)=>i!==idx))}
+              />
+
+              {/* 各月存入明細 */}
+              <div style={{marginTop:12}}>
+                <div style={{fontSize:10,fontWeight:700,color:G.sub,marginBottom:6}}>
+                  各月存入（來自月支出：{a.desc}）
+                </div>
+                <div style={{display:"flex",overflowX:"auto",gap:5,paddingBottom:3}}>
+                  {monthly.map(({mo,v})=>(
+                    <div key={mo} style={{minWidth:44,textAlign:"center",flexShrink:0,
+                      background:v>0?a.color+"18":"transparent",borderRadius:7,padding:"4px 2px"}}>
+                      <div style={{fontSize:9,color:G.muted}}>{mo.slice(4)}月</div>
+                      <div style={{fontSize:11,fontWeight:v>0?700:400,color:v>0?a.color:G.muted}}>
+                        {v>0?v.toLocaleString():"－"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </Card>
+          </Sec>
+        );
+      })}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// 高銀保險 分頁 — 連動月支出保費欄位
+// ═══════════════════════════════════════════════════════
+function GaoyinTab({state,update}){
+  const [editM,setEditM]=useState(null);
+  const [editRow,setEditRow]=useState({});
+
+  // 人員設定：name=顯示名, expKey=月支出對應 key, 高銀手動存入用 gaoyinMonths
+  const persons=[
+    {name:"天菁", expKey:"保費天菁", color:G[700]},
+    {name:"冠葦", expKey:"保費冠葦", color:BLU},
+    {name:"東朔", expKey:"保費東朔", color:AMB},  // 東朔保費在月支出沒有獨立欄，手動
+    {name:"昕諺", expKey:"保費昕諺", color:RED},  // 同上
+  ];
+  // 天菁/冠葦：從月支出 expense 讀取撥入（已存）；東朔/昕諺：從 gaoyinMonths 手動存入
+  const expKeyPersons=["天菁","冠葦"];
+  const manualPersons=["東朔","昕諺"];
+
+  const allM=state.gaoyinMonths;
+  const save=()=>{update("gaoyinMonths",{...allM,[editM]:editRow});setEditM(null);};
+
+  // 從月支出讀各月存入（天菁/冠葦）
+  const getExpDep=(pName, mo)=>{
+    const p=persons.find(x=>x.name===pName);
+    if(!p) return 0;
+    const exp=(state.monthlyData[mo]||BLANK_MONTH()).expense;
+    return exp[p.expKey]||0;
+  };
+
+  // 從 gaoyinMonths 讀各月存入（東朔/昕諺）
+  const getManualDep=(pName, mo)=>(allM[mo]||BLANK_GAOYIN())[pName+"存"]||0;
+
+  // 從 gaoyinMonths 讀各月支出（所有人）
+  const getOut=(pName, mo)=>(allM[mo]||BLANK_GAOYIN())[pName+"出"]||0;
+
+  // 各人全年累計
+  const cumulAll=(pName)=>{
+    const isExp=expKeyPersons.includes(pName);
+    const dep=MONTHS_115.reduce((s,mo)=>s+(isExp?getExpDep(pName,mo):getManualDep(pName,mo)),0);
+    const out=MONTHS_115.reduce((s,mo)=>s+getOut(pName,mo),0);
+    return{dep,out,bal:dep-out};
+  };
+
+  // 各月當月累計（截至該月的滾動累計）
+  const rollingCumul=(pName, upToIdx)=>{
+    const isExp=expKeyPersons.includes(pName);
+    let dep=0,out=0;
+    for(let i=0;i<=upToIdx;i++){
+      const mo=MONTHS_115[i];
+      dep+=isExp?getExpDep(pName,mo):getManualDep(pName,mo);
+      out+=getOut(pName,mo);
+    }
+    return{dep,out,bal:dep-out};
+  };
+
+  return(
+    <div style={{paddingBottom:28}}>
+      {/* Header 全年累計 */}
+      <div style={{background:`linear-gradient(135deg,${G[800]} 0%,${G[600]} 100%)`,padding:"14px 15px 12px"}}>
+        <div style={{fontSize:11,color:G[200],marginBottom:4,fontWeight:600}}>高雄銀行保險帳戶 — 115年累計</div>
+        <div style={{fontSize:10,color:G[300],marginBottom:8}}>天菁・冠葦 自動連動月支出；東朔・昕諺 手動編輯</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          {persons.map(({name,color})=>{
+            const{dep,out,bal}=cumulAll(name);
+            return(
+              <div key={name} style={{background:"rgba(255,255,255,0.13)",borderRadius:10,padding:"10px 11px"}}>
+                <div style={{fontSize:12,color:"#fff",fontWeight:700,marginBottom:2}}>{name}</div>
+                <AnimNum value={Math.abs(bal)} color={bal>=0?"#c8f0a0":"#f5a0a0"} size={16} bold />
+                <div style={{fontSize:9,color:G[200],marginTop:2}}>
+                  累積存 {dep.toLocaleString()} / 累積支 {out.toLocaleString()}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{padding:"9px 15px 2px",fontSize:11,color:G.muted}}>
+        天菁・冠葦保費自動從月支出讀取；東朔・昕諺點「編輯」手動輸入
+      </div>
+
+      {/* 各月明細 */}
+      {MONTHS_115.map((m, mIdx)=>{
+        const row=allM[m]||BLANK_GAOYIN();
+        const monthExp=(state.monthlyData[m]||BLANK_MONTH()).expense;
+        const totalFee=row.總金額||0;
+
+        return(
+          <div key={m}>
+            <div style={{padding:"10px 15px 4px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:14,fontWeight:700,color:G.text}}>{m}</span>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                {totalFee>0&&<span style={{fontSize:10,color:G.sub,background:G[100],padding:"2px 8px",borderRadius:99}}>總保費 {totalFee.toLocaleString()}</span>}
+                <Btn onClick={()=>{setEditM(m);setEditRow({...row});}} outline color={G.sub}
+                  style={{fontSize:11,padding:"3px 11px"}}>編輯</Btn>
+              </div>
+            </div>
+
+            {editM===m?(
+              <Card style={{margin:"0 14px 8px"}}>
+                <div style={{fontSize:11,color:G.muted,marginBottom:8}}>天菁・冠葦存入自動帶入，僅可編輯支出；東朔・昕諺存入需手動填</div>
+                {persons.map(({name,expKey,color})=>{
+                  const isExp=expKeyPersons.includes(name);
+                  const autoDep=isExp?(monthExp[expKey]||0):null;
+                  return(
+                    <div key={name} style={{marginBottom:12}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                        <span style={{fontSize:13,color,fontWeight:700}}>{name}</span>
+                        {isExp&&<span style={{fontSize:10,color:G.muted}}>存入自動 NT${autoDep.toLocaleString()}</span>}
+                      </div>
+                      <div style={{display:"flex",gap:8}}>
+                        {!isExp&&<NI label="本月存入" value={editRow[name+"存"]} onChange={v=>setEditRow({...editRow,[name+"存"]:v})}/>}
+                        <NI label="本月支出" value={editRow[name+"出"]} onChange={v=>setEditRow({...editRow,[name+"出"]:v})}/>
+                      </div>
+                    </div>
+                  );
+                })}
+                <NI label="本月總保費" value={editRow.總金額} onChange={v=>setEditRow({...editRow,總金額:v})} style={{marginBottom:10}}/>
+                <div style={{display:"flex",gap:8}}>
+                  <Btn onClick={()=>setEditM(null)} outline color={G.sub} style={{flex:1}}>取消</Btn>
+                  <Btn onClick={save} style={{flex:2}}>儲存</Btn>
+                </div>
+              </Card>
+            ):(
+              <Card style={{margin:"0 14px 8px"}}>
+                {persons.map(({name,color})=>{
+                  const isExp=expKeyPersons.includes(name);
+                  const dep=isExp?getExpDep(name,m):getManualDep(name,m);
+                  const out=getOut(name,m);
+                  const bal=dep-out;
+                  const roll=rollingCumul(name,mIdx);
+                  return(
+                    <div key={name} style={{padding:"7px 0",borderBottom:`0.5px solid ${G.border}`}}>
+                      <div style={{display:"grid",gridTemplateColumns:"44px 1fr 72px",alignItems:"center",gap:6}}>
+                        <span style={{fontSize:13,color,fontWeight:700}}>{name}</span>
+                        <span style={{fontSize:11,color:G.sub}}>
+                          存 <b style={{color:G.text}}>{dep.toLocaleString()}</b>
+                          {isExp&&<span style={{fontSize:9,color:G.muted}}> 自動</span>}
+                          {" "}/ 支 <b style={{color:G.text}}>{out.toLocaleString()}</b>
+                        </span>
+                        <span style={{fontSize:14,fontWeight:700,color:bal>=0?G[700]:RED,textAlign:"right"}}>
+                          {bal>=0?"+":"-"}{Math.abs(bal).toLocaleString()}
+                        </span>
+                      </div>
+                      {/* 當月累計小字 */}
+                      <div style={{fontSize:9,color:G.muted,marginTop:2,paddingLeft:50}}>
+                        累計存 {roll.dep.toLocaleString()} / 累計支 {roll.out.toLocaleString()}
+                        <span style={{marginLeft:6,color:roll.bal>=0?G[600]:RED,fontWeight:600}}>
+                          結餘 {roll.bal>=0?"+":"-"}{Math.abs(roll.bal).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </Card>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// 欠款 分頁
+// ═══════════════════════════════════════════════════════
+function DebtTab({state,update}){
+  const[repayTarget,setRepayTarget]=useState(null);
+  const[newRepay,setNewRepay]=useState({項目:"",金額:0});
+  const[newDebt,setNewDebt]=useState({對象:"",原始:0});
+  const addRepay=(id)=>{
+    if(!newRepay.項目||!newRepay.金額)return;
+    update("debts",state.debts.map(d=>d.id===id?{...d,已還:[...d.已還,{...newRepay}]}:d));
+    setNewRepay({項目:"",金額:0});setRepayTarget(null);
+  };
+  const addDebt=()=>{
+    if(!newDebt.對象||!newDebt.原始)return;
+    update("debts",[...state.debts,{id:Date.now(),對象:newDebt.對象,原始:newDebt.原始,已還:[]}]);
+    setNewDebt({對象:"",原始:0});
+  };
+  const total=state.debts.reduce((s,d)=>s+Math.max(d.原始-d.已還.reduce((ss,r)=>ss+r.金額,0),0),0);
+  return(
+    <div style={{paddingBottom:28}}>
+      <div style={{background:`linear-gradient(135deg,${RED} 0%,#c04040 100%)`,padding:"16px 15px 14px"}}>
+        <div style={{fontSize:11,color:"#fdd",marginBottom:4}}>尚欠總額</div>
+        <AnimNum value={total} color="#fff" size={28}/>
+      </div>
+      {state.debts.length===0&&<div style={{textAlign:"center",padding:32,color:G.muted,fontSize:14}}>目前無欠款記錄</div>}
+      {state.debts.map(debt=>{
+        const repaid=debt.已還.reduce((s,r)=>s+r.金額,0);
+        const remain=debt.原始-repaid;
+        const pct=Math.round(repaid/debt.原始*100);
+        return(
+          <Sec key={debt.id} title={`欠 ${debt.對象}`} color={remain>0?RED:G[700]}>
+            <Card style={{margin:"6px 14px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
+                <div><div style={{fontSize:11,color:G.sub}}>原借款</div><AnimNum value={debt.原始} color={G.text} size={18} bold={false}/></div>
+                <div style={{textAlign:"right"}}><div style={{fontSize:11,color:G.sub}}>剩餘</div><AnimNum value={remain} color={remain>0?RED:G[700]} size={18}/></div>
+              </div>
+              <div style={{height:6,background:G[100],borderRadius:3,marginBottom:6}}>
+                <div style={{height:6,borderRadius:3,width:pct+"%",background:G[500],transition:"width 0.5s ease"}}/>
+              </div>
+              <div style={{fontSize:11,color:G.muted,marginBottom:8}}>已還 {pct}%</div>
+              {debt.已還.map((r,i)=>(
+                <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`0.5px solid ${G.border}`}}>
+                  <span style={{fontSize:13,color:G.sub}}>{r.項目}</span>
+                  <span style={{fontSize:14,color:RED,fontWeight:700}}>-{r.金額.toLocaleString()}</span>
+                </div>
+              ))}
+              {repayTarget===debt.id?(
+                <div style={{marginTop:10}}>
+                  <TI value={newRepay.項目} onChange={v=>setNewRepay({...newRepay,項目:v})} placeholder="還款說明" style={{marginBottom:8}}/>
+                  <NI value={newRepay.金額} onChange={v=>setNewRepay({...newRepay,金額:v})} style={{marginBottom:10}}/>
+                  <div style={{display:"flex",gap:8}}>
+                    <Btn onClick={()=>setRepayTarget(null)} outline color={G.sub} style={{flex:1}}>取消</Btn>
+                    <Btn onClick={()=>addRepay(debt.id)} style={{flex:2,background:G[700]}}>記錄還款</Btn>
+                  </div>
+                </div>
+              ):(
+                <div style={{display:"flex",gap:8,marginTop:10}}>
+                  <Btn onClick={()=>setRepayTarget(debt.id)} outline color={G[700]} style={{flex:2}}>＋ 新增還款</Btn>
+                  <Btn onClick={()=>update("debts",state.debts.filter(d=>d.id!==debt.id))} outline color={RED} style={{flex:1}}>刪除</Btn>
+                </div>
+              )}
+            </Card>
+          </Sec>
+        );
+      })}
+      <Sec title="新增欠款" color={G.sub}>
+        <Card style={{margin:"6px 14px"}}>
+          <TI value={newDebt.對象} onChange={v=>setNewDebt({...newDebt,對象:v})} placeholder="對象姓名" style={{marginBottom:8}}/>
+          <NI value={newDebt.原始} onChange={v=>setNewDebt({...newDebt,原始:v})} label="借款金額" style={{marginBottom:10}}/>
+          <Btn onClick={addDebt} full style={{background:RED}}>新增欠款記錄</Btn>
+        </Card>
+      </Sec>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// 信用卡 分頁
+// expKey = 月支出對應欄位 key（自動連動當月消費）
+// ═══════════════════════════════════════════════════════
+function CreditTab({state,update}){
+  // 銀行設定：label=顯示名, expKey=月支出欄位 key
+  const BANKS=[
+    {label:"中信（天）", expKey:"中信天",  color:BLU},
+    {label:"天土銀",     expKey:"天土銀",  color:G[700]},
+    {label:"吳土銀",     expKey:"吳土銀",  color:G[600]},
+    {label:"吳一銀",     expKey:"第一吳",  color:AMB},
+    {label:"元大",       expKey:"元大",    color:"#5a3e9a"},
+    {label:"富邦（不含保費）", expKey:"富邦", color:"#b84000"},
+  ];
+
+  const[active,setActive]=useState("中信（天）");
+  const[newItem,setNewItem]=useState({項目:"",金額:0});
+
+  const cards=state.creditCards;
+  const m=state.currentMonth;
+  const ensureBank=(b)=>cards[b]||[];
+
+  // 同步更新月支出 expense 對應欄位
+  const syncMonthly=(bankLabel, newItems)=>{
+    const bank=BANKS.find(b=>b.label===bankLabel);
+    if(!bank) return;
+    const total=newItems.reduce((s,i)=>s+i.金額,0);
+    const monthData=state.monthlyData[m]||BLANK_MONTH();
+    const nextMonthly={
+      ...state.monthlyData,
+      [m]:{...monthData, expense:{...monthData.expense, [bank.expKey]:total}}
+    };
+    update("monthlyData", nextMonthly);
+  };
+
+  const addItem=()=>{
+    if(!newItem.項目||!newItem.金額)return;
+    const newItems=[...ensureBank(active),{...newItem}];
+    update("creditCards",{...cards,[active]:newItems});
+    syncMonthly(active, newItems);
+    setNewItem({項目:"",金額:0});
+  };
+  const delItem=(bank,idx)=>{
+    const newItems=ensureBank(bank).filter((_,i)=>i!==idx);
+    update("creditCards",{...cards,[bank]:newItems});
+    syncMonthly(bank, newItems);
+  };
+
+  // 月支出當月消費金額（從 expense 讀，已連動）
+  const monthExp=(state.monthlyData[m]||BLANK_MONTH()).expense;
+  const getMonthlyAmt=(expKey)=>monthExp[expKey]||0;
+
+  // 全部銀行總計（手動明細合計）
+  const grandTotal=BANKS.reduce((s,b)=>s+ensureBank(b.label).reduce((ss,i)=>ss+i.金額,0),0);
+
+  const activBank=BANKS.find(b=>b.label===active)||BANKS[0];
+  const activeItems=ensureBank(active);
+  const activeTotal=activeItems.reduce((s,i)=>s+i.金額,0);
+  const monthlyAmt=getMonthlyAmt(activBank.expKey);
+
+  return(
+    <div style={{paddingBottom:28}}>
+      <MonthPicker current={state.currentMonth} onChange={v=>update("currentMonth",v)}/>
+      {/* Header */}
+      <div style={{background:`linear-gradient(135deg,${BLU} 0%,#2a6aaa 100%)`,padding:"16px 15px 14px"}}>
+        <div style={{fontSize:11,color:"#cde",marginBottom:4}}>全部手動明細合計</div>
+        <AnimNum value={grandTotal} color="#fff" size={28}/>
+        <div style={{fontSize:10,color:"#aac",marginTop:4}}>
+          當月月支出信用卡合計：NT${BANKS.reduce((s,b)=>s+getMonthlyAmt(b.expKey),0).toLocaleString()}
+        </div>
+      </div>
+
+      {/* 銀行切換 — 橫向捲動 */}
+      <div style={{display:"flex",overflowX:"auto",background:G.card,borderBottom:`1px solid ${G.border}`,padding:"0 4px"}}>
+        {BANKS.map(b=>(
+          <button key={b.label} onClick={()=>setActive(b.label)} style={{
+            padding:"9px 10px",fontSize:12,border:"none",background:"none",cursor:"pointer",
+            whiteSpace:"nowrap",flexShrink:0,
+            color:active===b.label?b.color:G.sub,
+            borderBottom:active===b.label?`2.5px solid ${b.color}`:"2.5px solid transparent",
+            fontWeight:active===b.label?700:400,transition:"all 0.18s",
+          }}>{b.label}</button>
+        ))}
+      </div>
+
+      {/* 當月連動消費提示 */}
+      <div style={{margin:"10px 14px 4px",background:activBank.color+"14",border:`1px solid ${activBank.color}33`,borderRadius:10,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div>
+          <div style={{fontSize:10,color:G.sub,marginBottom:2}}>
+            {m} 月支出「{activBank.expKey}」
+          </div>
+          <div style={{fontSize:11,color:G.muted}}>明細合計自動同步 ↓</div>
+        </div>
+        <AnimNum value={monthlyAmt} color={activBank.color} size={20} bold/>
+      </div>
+
+      {/* 手動消費明細 */}
+      <div style={{padding:"4px 14px 2px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{fontSize:11,fontWeight:700,color:G.sub}}>消費明細（手動記錄）</span>
+        <AnimNum value={activeTotal} color={activBank.color} size={13}/>
+      </div>
+      <Card style={{margin:"0 14px 10px"}}>
+        {activeItems.length===0&&<div style={{textAlign:"center",color:G.muted,fontSize:13,padding:14}}>尚無明細，可新增消費項目</div>}
+        {activeItems.map((item,i)=>(
+          <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`0.5px solid ${G.border}`}}>
+            <span style={{fontSize:14,color:G.text}}>{item.項目}</span>
+            <div style={{display:"flex",gap:10,alignItems:"center"}}>
+              <AnimNum value={item.金額} color={RED} size={14}/>
+              <button onClick={()=>delItem(active,i)} style={{fontSize:13,color:RED,background:"none",border:"none",cursor:"pointer",padding:"0 4px"}}>✕</button>
+            </div>
+          </div>
+        ))}
+      </Card>
+
+      {/* 新增明細 */}
+      <Card style={{margin:"0 14px"}}>
+        <div style={{fontSize:12,fontWeight:700,color:G.sub,marginBottom:8}}>＋ 新增消費明細</div>
+        <TI value={newItem.項目} onChange={v=>setNewItem({...newItem,項目:v})} placeholder="消費項目" style={{marginBottom:8}}/>
+        <NI value={newItem.金額} onChange={v=>setNewItem({...newItem,金額:v})} style={{marginBottom:10}}/>
+        <Btn onClick={addItem} full style={{background:activBank.color}}>新增</Btn>
+      </Card>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// 保險 分頁
+// ═══════════════════════════════════════════════════════
+function InsuranceTab({state,update}){
+  const pColor={老公:BLU,昕諺:RED,天菁:G[700],東朔:AMB,車子:G.sub};
+  const uniquePersons=[...new Set(state.insurance.map(i=>i.人))];
+  const[sel,setSel]=useState(uniquePersons[0]||"老公");
+  const[adding,setAdding]=useState(false);
+  const[newIns,setNewIns]=useState({人:"",保單:"",總保費:0,平均月費:0,帳戶:"",業務:"",備註:""});
+  const addIns=()=>{
+    if(!newIns.保單)return;
+    update("insurance",[...state.insurance,{...newIns}]);
+    setAdding(false);setNewIns({人:sel,保單:"",總保費:0,平均月費:0,帳戶:"",業務:"",備註:""});
+  };
+  const items=state.insurance.filter(i=>i.人===sel);
+  const total=items.reduce((s,i)=>s+i.總保費,0);
+  const monthly=items.reduce((s,i)=>s+i.平均月費,0);
+  return(
+    <div style={{paddingBottom:28}}>
+      <div style={{display:"flex",overflowX:"auto",background:G.card,borderBottom:`1px solid ${G.border}`,padding:"0 12px"}}>
+        {uniquePersons.map(p=>(
+          <button key={p} onClick={()=>setSel(p)} style={{
+            padding:"10px 12px",fontSize:13,border:"none",background:"none",cursor:"pointer",whiteSpace:"nowrap",
+            color:sel===p?(pColor[p]||G[700]):G.sub,
+            borderBottom:sel===p?`2.5px solid ${pColor[p]||G[700]}`:"2.5px solid transparent",
+            fontWeight:sel===p?700:400,transition:"all 0.18s",
+          }}>{p}</button>
+        ))}
+        <button onClick={()=>{setAdding(true);setNewIns({...newIns,人:sel});}} style={{padding:"10px 12px",fontSize:13,border:"none",background:"none",cursor:"pointer",color:G[600],whiteSpace:"nowrap"}}>＋新增</button>
+      </div>
+      {uniquePersons.includes(sel)&&(
+        <div style={{display:"flex",gap:8,padding:"10px 14px 4px"}}>
+          {[["年繳保費",total,pColor[sel]||G[700]],["月均費用",monthly,G.sub]].map(([l,v,c])=>(
+            <div key={l} style={{flex:1,background:G[50],border:`1px solid ${G.border}`,borderRadius:10,padding:"10px 12px"}}>
+              <div style={{fontSize:10,color:G.sub,marginBottom:3}}>{l}</div>
+              <AnimNum value={v} color={c} size={16}/>
+            </div>
+          ))}
+        </div>
+      )}
+      {adding&&(
+        <Card style={{margin:"10px 14px"}}>
+          <div style={{fontSize:12,fontWeight:700,color:G.sub,marginBottom:8}}>新增保單</div>
+          {[["人","被保人"],["保單","保單名稱"],["帳戶","扣款帳戶"],["業務","業務員"],["備註","備注說明"]].map(([k,ph])=>(
+            <TI key={k} value={newIns[k]} onChange={v=>setNewIns({...newIns,[k]:v})} placeholder={ph} style={{marginBottom:8}}/>
+          ))}
+          <div style={{display:"flex",gap:8,marginBottom:10}}>
+            <NI label="年保費" value={newIns.總保費} onChange={v=>setNewIns({...newIns,總保費:v})}/>
+            <NI label="月均費" value={newIns.平均月費} onChange={v=>setNewIns({...newIns,平均月費:v})}/>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <Btn onClick={()=>setAdding(false)} outline color={G.sub} style={{flex:1}}>取消</Btn>
+            <Btn onClick={addIns} style={{flex:2}}>新增保單</Btn>
+          </div>
+        </Card>
+      )}
+      {items.map((ins,i)=>(
+        <Card key={i} style={{margin:"8px 14px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+            <div style={{fontSize:14,fontWeight:700,color:G.text,flex:1}}>{ins.保單}</div>
+            <button onClick={()=>update("insurance",state.insurance.filter((_,j)=>j!==state.insurance.indexOf(ins)))}
+              style={{fontSize:12,color:RED,background:"none",border:"none",cursor:"pointer",marginLeft:8}}>✕</button>
+          </div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:4}}>
+            {[ins.帳戶,`業務：${ins.業務}`,ins.平均月費>0?`月均 NT$${ins.平均月費.toLocaleString()}`:null].filter(Boolean).map(t=>(
+              <span key={t} style={{fontSize:10,padding:"2px 8px",background:G[100],color:G.sub,borderRadius:99}}>{t}</span>
+            ))}
+            <span style={{fontSize:10,padding:"2px 8px",background:G[50],color:G[700],borderRadius:99,fontWeight:700}}>NT${ins.總保費.toLocaleString()}/年</span>
+          </div>
+          <div style={{fontSize:11,color:G.muted}}>{ins.備註}</div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// 車輛 分頁
+// ═══════════════════════════════════════════════════════
+function CarTab({state,update}){
+  const{car}=state;
+  const setC=(id,k,v)=>update("car",{...car,[id]:{...car[id],[k]:v}});
+  const carList=["BJR-3320","BQU-8660"];
+  const totalMonthly=carList.reduce((s,id)=>{
+    const c=car[id];
+    return s+(c.牌照稅+c.燃料稅+c.保養金額*c.保養頻率)/12;
+  },0);
+  return(
+    <div style={{paddingBottom:28}}>
+      <div style={{background:`linear-gradient(135deg,${G[800]} 0%,${G[600]} 100%)`,padding:"16px 15px 14px"}}>
+        <div style={{fontSize:11,color:G[200],marginBottom:4}}>兩車月均應存</div>
+        <AnimNum value={Math.round(totalMonthly)} color="#c8f0a0" size={26}/>
+      </div>
+      {carList.map(id=>{
+        const c=car[id];
+        const annual=c.牌照稅+c.燃料稅+c.保養金額*c.保養頻率;
+        return(
+          <Sec key={id} title={`${id} 年度費用`} color={AMB}>
+            <Card style={{margin:"6px 14px"}}>
+              <div style={{display:"flex",gap:8,marginBottom:8}}>
+                <NI label={`牌照稅（${c.牌照月}）`} value={c.牌照稅} onChange={v=>setC(id,"牌照稅",v)}/>
+                <NI label={`燃料稅（${c.燃料月}）`} value={c.燃料稅} onChange={v=>setC(id,"燃料稅",v)}/>
+              </div>
+              <div style={{display:"flex",gap:8,marginBottom:8}}>
+                <NI label="每次保養費" value={c.保養金額} onChange={v=>setC(id,"保養金額",v)}/>
+                <NI label="每年次數" value={c.保養頻率} onChange={v=>setC(id,"保養頻率",v)}/>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",borderTop:`1px solid ${G.border}`,paddingTop:7}}>
+                <span style={{fontSize:13,color:G.sub}}>年合計</span>
+                <AnimNum value={annual} color={AMB} size={14}/>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",paddingTop:5}}>
+                <span style={{fontSize:13,color:G.sub}}>月均應存</span>
+                <AnimNum value={Math.round(annual/12)} color={G[700]} size={14}/>
+              </div>
+            </Card>
+          </Sec>
+        );
+      })}
+      <Sec title="停車費合約" color={BLU}>
+        {[["停車-8660","BQU-8660"],["停車-3320","BJR-3320"]].map(([k,label])=>{
+          const p=car[k];
+          return(
+            <Card key={k} style={{margin:"6px 14px 10px"}}>
+              <div style={{fontSize:13,fontWeight:700,color:G.text,marginBottom:8}}>{label} 停車費</div>
+              <NI label="半年金額" value={p.金額} onChange={v=>setC(k,"金額",v)} style={{marginBottom:8}}/>
+              <TI value={p.合約} onChange={v=>setC(k,"合約",v)} placeholder="合約期間" style={{marginBottom:8}}/>
+              <TI value={p.到期日} onChange={v=>setC(k,"到期日",v)} placeholder="到期日" style={{marginBottom:8}}/>
+              <TI value={p.下次} onChange={v=>setC(k,"下次",v)} placeholder="下次注意事項"/>
+              {p.下次&&<div style={{marginTop:6,fontSize:11,color:AMB}}>⚠ {p.下次}</div>}
+            </Card>
+          );
+        })}
+      </Sec>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// 年預估 分頁
+// ═══════════════════════════════════════════════════════
+function YearlyTab({state,update}){
+  const[view,setView]=useState("收入");
+  const data=state.yearlyData||{};
+  const setVal=(cat,sub,m,type,v)=>update("yearlyData",{...data,[`${cat}|${sub}|${m}|${type}`]:v});
+  const getBudget=(cat,sub,m)=>data[`${cat}|${sub}|${m}|預算`]||0;
+  const mL=["1","2","3","4","5","6","7","8","9","10","11","12"];
+
+  // ── 月支出 → 年預估實際對應表 ──────────────────────
+  // 收入 expKey→[cat, sub]
+  const IN_MAP={
+    天:        ["薪資收入","天菁薪資"],
+    吳:        ["薪資收入","冠葦薪資"],
+    蝦皮:      ["兼職收入","蝦皮"],
+    "Wuli托育": ["托育收入","Wuli托育"],
+    "Wlison托育":["托育收入","Wlison托育"],
+    其他:      ["其他收入","其他"],
+  };
+  // 支出 expKey→[cat, sub]
+  const EX_MAP={
+    生活費天菁:  ["生活費","生活費天菁"],
+    生活費冠葦:  ["生活費","生活費冠葦"],
+    天菁電話費:  ["電話/網路","天菁電話費"],
+    冠葦電話費:  ["電話/網路","冠葦電話費"],
+    網路費:     ["電話/網路","網路費"],
+    水費:       ["電話/網路","水費"],
+    電費:       ["電話/網路","電費"],
+    保費天菁:   ["保險費","天菁"],
+    保費冠葦:   ["保險費","冠葦"],
+    保費Wuli:   ["保險費","Wuli"],
+    保費Wlison: ["保險費","Wlison"],
+    停車天菁:   ["停車費","天菁停車"],
+    停車冠葦:   ["停車費","冠葦停車"],
+    管理費:     ["停車費","管理費"],
+    兒子學費諺: ["學費","Wuli學費"],
+    朔轉帳:    ["學費","Wlison學費"],
+    信貸:      ["貸款","國泰信貸"],
+    車貸天菁:  ["貸款","車貸天菁"],
+    車貸冠葦:  ["貸款","車貸冠葦"],
+    房貸土銀:  ["貸款","房貸"],
+    中信天:    ["信用卡","中信（天）"],
+    天土銀:    ["信用卡","天土銀"],
+    吳土銀:    ["信用卡","吳土銀"],
+    第一吳:    ["信用卡","吳一銀"],
+    元大:      ["信用卡","元大"],
+    富邦:      ["信用卡","富邦（不含保費）"],
+    稅金:      ["稅金・保養","稅金"],
+    汽車保養費: ["稅金・保養","汽車保養費"],
+    小孩存款:  ["其他","小孩存款"],
+    其他:      ["其他","其他支出"],
+  };
+
+  // 從月支出讀實際值
+  const getActual=(cat,sub,m)=>{
+    const mData=(state.monthlyData[m]||BLANK_MONTH());
+    // 收入
+    const inEntry=Object.entries(IN_MAP).find(([,v])=>v[0]===cat&&v[1]===sub);
+    if(inEntry) return mData.income[inEntry[0]]||0;
+    // 支出
+    const exEntry=Object.entries(EX_MAP).find(([,v])=>v[0]===cat&&v[1]===sub);
+    if(exEntry) return mData.expense[exEntry[0]]||0;
+    // 手動備援
+    return data[`${cat}|${sub}|${m}|實際`]||0;
+  };
+
+  const inCats=[
+    {label:"薪資收入",subs:["天菁薪資","冠葦薪資"]},
+    {label:"兼職收入",subs:["蝦皮"]},
+    {label:"年終獎金",subs:["天菁年終","冠葦年終"]},
+    {label:"托育收入",subs:["Wuli托育","Wlison托育"]},
+    {label:"其他收入",subs:["其他"]},
+  ];
+  const exCats=[
+    {label:"生活費",subs:["生活費天菁","生活費冠葦"]},
+    {label:"電話/網路",subs:["天菁電話費","冠葦電話費","網路費","水費","電費"]},
+    {label:"保險費",subs:["天菁","冠葦","Wuli","Wlison"]},
+    {label:"停車費",subs:["天菁停車","冠葦停車","管理費"]},
+    {label:"學費",subs:["Wuli學費","Wlison學費"]},
+    {label:"貸款",subs:["國泰信貸","車貸天菁","車貸冠葦","房貸"]},
+    {label:"信用卡",subs:["中信（天）","天土銀","吳土銀","吳一銀","元大","富邦（不含保費）"]},
+    {label:"稅金・保養",subs:["稅金","汽車保養費"]},
+    {label:"其他",subs:["小孩存款","其他支出"]},
+  ];
+  const cats=view==="收入"?inCats:exCats;
+  const allCats=[...inCats,...exCats];
+
+  // 各月實際收支（從月支出自動計算）
+  const monthTotals=MONTHS_115.map(m=>{
+    const mData=(state.monthlyData[m]||BLANK_MONTH());
+    const totalIn=Object.values(mData.income).reduce((s,v)=>s+v,0);
+    const totalEx=Object.values(mData.expense).reduce((s,v)=>s+v,0);
+    return{in:totalIn,ex:totalEx,net:totalIn-totalEx};
+  });
+  const yearActualIn=monthTotals.reduce((s,t)=>s+t.in,0);
+  const yearActualEx=monthTotals.reduce((s,t)=>s+t.ex,0);
+  const yearActualNet=yearActualIn-yearActualEx;
+
+  // 各月預算收支（從預算格計算）
+  const monthBudgetTotals=MONTHS_115.map(m=>{
+    const budgetIn=inCats.flatMap(c=>c.subs).reduce((s,sub)=>{
+      const cat=inCats.find(c=>c.subs.includes(sub))?.label||"";
+      return s+getBudget(cat,sub,m);
+    },0);
+    const budgetEx=exCats.flatMap(c=>c.subs).reduce((s,sub)=>{
+      const cat=exCats.find(c=>c.subs.includes(sub))?.label||"";
+      return s+getBudget(cat,sub,m);
+    },0);
+    return{in:budgetIn,ex:budgetEx,net:budgetIn-budgetEx};
+  });
+  const yearBudgetIn=monthBudgetTotals.reduce((s,t)=>s+t.in,0);
+  const yearBudgetEx=monthBudgetTotals.reduce((s,t)=>s+t.ex,0);
+  const yearBudgetNet=yearBudgetIn-yearBudgetEx;
+
+  // 累計現金流（預算滾動加總）
+  let cumulative=0;
+  const cumulativeBudget=monthBudgetTotals.map(t=>{
+    cumulative+=t.net;
+    return cumulative;
+  });
+
+  return(
+    <div style={{paddingBottom:28}}>
+      {/* ── 主 Header ── */}
+      <div style={{background:`linear-gradient(135deg,${G[800]} 0%,${G[600]} 100%)`,padding:"16px 15px 16px"}}>
+        <div style={{fontSize:11,color:G[200],marginBottom:8,fontWeight:600}}>115年 全年總覽</div>
+
+        {/* 預算 vs 實際 兩欄 */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+          {[
+            {l:"預估結餘",v:yearBudgetNet,sub:`收 ${(yearBudgetIn/10000).toFixed(1)}萬 / 支 ${(yearBudgetEx/10000).toFixed(1)}萬`,c:yearBudgetNet>=0?"#c8f0a0":"#f5a0a0"},
+            {l:"實際結餘",v:yearActualNet,sub:`收 ${(yearActualIn/10000).toFixed(1)}萬 / 支 ${(yearActualEx/10000).toFixed(1)}萬`,c:yearActualNet>=0?"#bdf0d0":"#f5a0a0"},
+          ].map(({l,v,sub,c})=>(
+            <div key={l} style={{background:"rgba(255,255,255,0.13)",borderRadius:11,padding:"11px 12px"}}>
+              <div style={{fontSize:10,color:G[200],fontWeight:600,marginBottom:4}}>{l}</div>
+              <AnimNum value={v} color={c} size={18} bold/>
+              <div style={{fontSize:9,color:G[300],marginTop:3}}>{sub}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* 差異提示 */}
+        {yearBudgetIn>0&&(
+          <div style={{background:"rgba(255,255,255,0.1)",borderRadius:9,padding:"8px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:11,color:G[200]}}>預估 vs 實際 差異</span>
+            <AnimNum value={yearActualNet-yearBudgetNet} color={yearActualNet>=yearBudgetNet?"#c8f0a0":"#f5a0a0"} size={14} bold/>
+          </div>
+        )}
+      </div>
+
+      {/* ── 各月結餘橫條（實際＋預算並排） ── */}
+      <div style={{padding:"12px 14px 4px"}}>
+        <div style={{fontSize:10,fontWeight:700,color:G.sub,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>各月結餘</div>
+        <div style={{display:"flex",overflowX:"auto",gap:5,paddingBottom:3}}>
+          {MONTHS_115.map((mo,i)=>{
+            const actual=monthTotals[i];
+            const budget=monthBudgetTotals[i];
+            const cumul=cumulativeBudget[i];
+            return(
+              <div key={mo} style={{minWidth:60,background:G.card,border:`1px solid ${G.border}`,borderRadius:10,padding:"8px 6px",textAlign:"center",flexShrink:0}}>
+                <div style={{fontSize:9,color:G.muted,marginBottom:4,fontWeight:600}}>{i+1}月</div>
+                {/* 預算結餘 */}
+                <div style={{fontSize:10,color:G.muted,marginBottom:1}}>預</div>
+                <div style={{fontSize:11,fontWeight:700,color:budget.net>=0?G[700]:RED,marginBottom:4}}>
+                  {budget.net===0?"—":(budget.net>0?"+":"-")}{Math.abs(budget.net)>=10000?(Math.abs(budget.net)/10000).toFixed(1)+"萬":Math.abs(budget.net).toLocaleString()}
+                </div>
+                {/* 實際結餘 */}
+                <div style={{fontSize:10,color:G.muted,marginBottom:1}}>實</div>
+                <div style={{fontSize:11,fontWeight:700,color:actual.net>=0?G[600]:RED,marginBottom:4}}>
+                  {actual.net===0?"—":(actual.net>0?"+":"-")}{Math.abs(actual.net)>=10000?(Math.abs(actual.net)/10000).toFixed(1)+"萬":Math.abs(actual.net).toLocaleString()}
+                </div>
+                {/* 累計現金流 */}
+                <div style={{borderTop:`0.5px solid ${G.border}`,paddingTop:4,marginTop:2}}>
+                  <div style={{fontSize:8,color:G.muted}}>累計</div>
+                  <div style={{fontSize:10,fontWeight:700,color:cumul>=0?G[500]:RED}}>
+                    {cumul>=0?"+":"-"}{Math.abs(cumul)>=10000?(Math.abs(cumul)/10000).toFixed(1)+"萬":Math.abs(cumul).toLocaleString()}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{fontSize:10,color:G.muted,marginTop:5}}>「累計」為預算結餘逐月滾動加總，代表預估現金流</div>
+      </div>
+
+      {/* 收入/支出切換 */}
+      <div style={{display:"flex",margin:"8px 14px",border:`1.5px solid ${G.border}`,borderRadius:10,overflow:"hidden"}}>
+        {["收入","支出"].map(v=>(
+          <button key={v} onClick={()=>setView(v)} style={{
+            flex:1,padding:"10px",fontSize:14,border:"none",cursor:"pointer",fontWeight:700,
+            background:view===v?(v==="收入"?G[700]:RED):G[50],
+            color:view===v?"#fff":G.sub,transition:"all 0.2s",
+          }}>{v}</button>
+        ))}
+      </div>
+
+      <div style={{padding:"0 14px 6px",fontSize:11,color:G.muted}}>橘底格＝預算，白底格＝實際</div>
+
+      {cats.map(cat=>{
+        const catBudget=cat.subs.reduce((s,sub)=>s+MONTHS_115.reduce((ss,m)=>ss+getBudget(cat.label,sub,m),0),0);
+        const catActual=cat.subs.reduce((s,sub)=>s+MONTHS_115.reduce((ss,m)=>ss+getActual(cat.label,sub,m),0),0);
+        return(
+          <Sec key={cat.label} title={cat.label} color={view==="收入"?G[700]:RED}>
+            <div style={{margin:"0",background:G.card,border:`1px solid ${G.border}`,borderBottom:`1px solid ${G.border}`,padding:"10px 14px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                <span style={{fontSize:12,color:G.sub}}>預算：{catBudget.toLocaleString()}</span>
+                <span style={{fontSize:12,color:catActual>catBudget&&catBudget>0?RED:G[700],fontWeight:700}}>實際：{catActual.toLocaleString()}</span>
+              </div>
+              {cat.subs.map(sub=>{
+                const subB=MONTHS_115.reduce((s,m)=>s+getBudget(cat.label,sub,m),0);
+                const subA=MONTHS_115.reduce((s,m)=>s+getActual(cat.label,sub,m),0);
+                return(
+                  <div key={sub} style={{marginBottom:10}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                      <span style={{fontSize:13,fontWeight:700,color:G.text}}>{sub}</span>
+                      <span style={{fontSize:11,color:subA>subB&&subB>0?RED:G.sub}}>實 {subA.toLocaleString()} / 預 {subB.toLocaleString()}</span>
+                    </div>
+                    <div style={{overflowX:"auto"}}>
+                      <table style={{borderCollapse:"collapse",minWidth:520}}>
+                        <thead>
+                          <tr>
+                            <td style={{fontSize:9,color:G.muted,padding:"0 2px 3px",minWidth:28}}></td>
+                            {mL.map(ml=><th key={ml} style={{fontSize:9,color:G.muted,fontWeight:400,padding:"0 2px 3px",textAlign:"center",minWidth:40}}>{ml}月</th>)}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {/* 預算行：可手動輸入 */}
+                          <tr>
+                            <td style={{fontSize:9,color:AMB,fontWeight:700,padding:"2px 4px 2px 0",whiteSpace:"nowrap"}}>預</td>
+                            {MONTHS_115.map(m=>(
+                              <td key={m} style={{padding:2}}>
+                                <input type="number" value={getBudget(cat.label,sub,m)||""}
+                                  onChange={e=>setVal(cat.label,sub,m,"預算",Number(e.target.value))}
+                                  placeholder="0"
+                                  style={{width:40,fontSize:10,padding:"4px 3px",border:`1px solid ${G.border}`,borderRadius:5,background:AMBBG,textAlign:"center",color:G.text,outline:"none"}}/>
+                              </td>
+                            ))}
+                          </tr>
+                          {/* 實際行：自動從月支出帶入，唯讀 */}
+                          <tr>
+                            <td style={{fontSize:9,color:G[700],fontWeight:700,padding:"2px 4px 2px 0",whiteSpace:"nowrap"}}>實</td>
+                            {MONTHS_115.map(m=>{
+                              const actual=getActual(cat.label,sub,m);
+                              const budget=getBudget(cat.label,sub,m);
+                              const over=budget>0&&actual>budget;
+                              return(
+                                <td key={m} style={{padding:2}}>
+                                  <div style={{width:40,fontSize:10,padding:"4px 3px",border:`1px solid ${over?RED:G[200]}`,borderRadius:5,background:actual>0?(over?"#fff0f0":G[50]):"#f9fafb",textAlign:"center",color:actual>0?(over?RED:G[700]):G.muted,fontWeight:actual>0?700:400}}>
+                                    {actual>0?actual.toLocaleString():"—"}
+                                  </div>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Sec>
+        );
+      })}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// 主 APP
+// ═══════════════════════════════════════════════════════
+const TABS=[
+  {id:"monthly", label:"月支出", icon:"📅"},
+  {id:"predeposit",label:"預存金",icon:"🏦"},
+  {id:"gaoyin",  label:"高銀保險",icon:"🛡️"},
+  {id:"debt",    label:"欠款",  icon:"💸"},
+  {id:"credit",  label:"信用卡",icon:"💳"},
+  {id:"insurance",label:"保險", icon:"📋"},
+  {id:"car",     label:"車輛",  icon:"🚗"},
+  {id:"yearly",  label:"年預估",icon:"📊"},
+];
+
+const STORAGE_KEY = "family_budget_115";
+
+function App(){
+  const[tab,setTab]=useState("monthly");
+  const[state,setState]=useState(INIT);
+  const[saveStatus,setSaveStatus]=useState("載入中…");
+  const saveTimer=useRef(null);
+
+  // ── 啟動時從 localStorage 讀取 ──
+  useEffect(()=>{
+    try{
+      const raw=localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        const saved=JSON.parse(raw);
+        setState(prev=>({...prev,...saved}));
+        setSaveStatus("已載入");
+      } else {
+        setSaveStatus("新資料");
+      }
+    } catch(e){
+      setSaveStatus("讀取失敗");
+    }
+  },[]);
+
+  // ── 每次 state 異動，防抖 1.5s 後自動儲存 ──
+  const update=useCallback((key,val)=>{
+    setState(prev=>({...prev,[key]:val}));
+  },[]);
+
+  useEffect(()=>{
+    if(saveStatus==="載入中…"||saveStatus==="新資料") return;
+    if(saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current=setTimeout(()=>{
+      try{
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        setSaveStatus("✓ 已儲存");
+        setTimeout(()=>setSaveStatus(""),3000);
+      } catch(e){
+        setSaveStatus("⚠ 儲存失敗");
+      }
+    },1500);
+  },[state]);
+
+  const totalDebt=state.debts.reduce((s,d)=>s+Math.max(d.原始-d.已還.reduce((ss,x)=>ss+x.金額,0),0),0);
+  const[showMenu,setShowMenu]=useState(false);
+  const[importError,setImportError]=useState("");
+  const fileRef=useRef(null);
+
+  // 手動立即儲存
+  const saveNow=()=>{
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      setSaveStatus("✓ 已儲存");
+      setTimeout(()=>setSaveStatus(""),3000);
+    } catch(e){
+      setSaveStatus("⚠ 儲存失敗");
+    }
+  };
+
+  // 匯出 JSON
+  const exportJSON=()=>{
+    const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;
+    a.download=`家庭記帳_115年備份_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setShowMenu(false);
+  };
+
+  // 匯入 JSON
+  const importJSON=(e)=>{
+    const file=e.target.files?.[0];
+    if(!file) return;
+    const reader=new FileReader();
+    reader.onload=(ev)=>{
+      try{
+        const parsed=JSON.parse(ev.target.result);
+        const merged={...state,...parsed};
+        setState(merged);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+        setSaveStatus("✓ 匯入並儲存");
+        setTimeout(()=>setSaveStatus(""),3000);
+        setImportError("");
+        setShowMenu(false);
+      } catch{
+        setImportError("檔案格式錯誤，請選擇正確的備份 JSON");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value="";
+  };
+
+  return(
+    <div style={{maxWidth:430,margin:"0 auto",background:G.bg,minHeight:"100vh",display:"flex",flexDirection:"column",fontFamily:"system-ui,-apple-system,sans-serif",color:G.text}}>
+      {/* 狀態欄 */}
+      <div style={{background:G[800],padding:"10px 15px 8px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{color:G[300],fontSize:11,minWidth:40}}>
+          {totalDebt>0&&<span style={{background:"rgba(255,80,80,0.25)",color:"#ffbbbb",padding:"2px 6px",borderRadius:99,fontSize:10}}>欠{(totalDebt/10000).toFixed(1)}萬</span>}
+        </span>
+        <span style={{color:"#fff",fontSize:13,fontWeight:700,letterSpacing:"0.02em"}}>115年家庭記帳</span>
+        <button onClick={()=>setShowMenu(v=>!v)} style={{
+          background:"none",border:"none",cursor:"pointer",padding:"2px 4px",
+          fontSize:10,color:saveStatus.startsWith("✓")?G[300]:saveStatus.startsWith("⚠")?"#f5a0a0":G[400],
+          minWidth:56,textAlign:"right",
+        }}>
+          {saveStatus||"☰ 選單"}
+        </button>
+      </div>
+
+      {/* 下拉選單 */}
+      {showMenu&&(
+        <div style={{position:"sticky",top:0,zIndex:50,background:G[900],padding:"12px 16px",borderBottom:`1px solid ${G[700]}`}}>
+          <div style={{fontSize:11,color:G[300],marginBottom:10,fontWeight:600}}>資料管理</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            <button onClick={saveNow} style={{
+              padding:"10px 14px",background:G[700],border:"none",borderRadius:9,
+              color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",textAlign:"left",
+            }}>💾 立即儲存至雲端</button>
+            <button onClick={exportJSON} style={{
+              padding:"10px 14px",background:"rgba(255,255,255,0.1)",border:`1px solid ${G[600]}`,borderRadius:9,
+              color:G[200],fontSize:14,fontWeight:600,cursor:"pointer",textAlign:"left",
+            }}>📤 匯出備份（下載 JSON）</button>
+            <button onClick={()=>fileRef.current?.click()} style={{
+              padding:"10px 14px",background:"rgba(255,255,255,0.1)",border:`1px solid ${G[600]}`,borderRadius:9,
+              color:G[200],fontSize:14,fontWeight:600,cursor:"pointer",textAlign:"left",
+            }}>📥 匯入備份（選擇 JSON）</button>
+            <input ref={fileRef} type="file" accept=".json" onChange={importJSON} style={{display:"none"}}/>
+            {importError&&<div style={{fontSize:12,color:"#f5a0a0",padding:"6px 0"}}>{importError}</div>}
+            <button onClick={()=>setShowMenu(false)} style={{
+              padding:"8px 14px",background:"none",border:"none",
+              color:G[400],fontSize:13,cursor:"pointer",textAlign:"left",
+            }}>✕ 關閉</button>
+          </div>
+          <div style={{marginTop:10,fontSize:10,color:G[500],lineHeight:1.6}}>
+            資料儲存於此裝置本機（localStorage），不會上傳。建議每月匯出一次 JSON 備份存到 iCloud Drive 或 Google Drive。
+          </div>
+        </div>
+      )}
+
+      {/* 頁籤 */}
+      <div style={{display:"flex",overflowX:"auto",background:G.card,borderBottom:`1px solid ${G.border}`,position:"sticky",top:0,zIndex:20}}>
+        {TABS.map(t=>(
+          <button key={t.id} onClick={()=>{setTab(t.id);setShowMenu(false);}} style={{
+            display:"flex",flexDirection:"column",alignItems:"center",padding:"8px 6px 5px",
+            fontSize:9.5,border:"none",background:"none",cursor:"pointer",whiteSpace:"nowrap",
+            color:tab===t.id?G[700]:G.muted,
+            borderBottom:tab===t.id?`2.5px solid ${G[600]}`:"2.5px solid transparent",
+            minWidth:50,fontWeight:tab===t.id?700:400,transition:"all 0.18s",
+          }}>
+            <span style={{fontSize:17,marginBottom:2}}>{t.icon}</span>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {/* 畫面 */}
+      <div style={{flex:1,overflowY:"auto"}}>
+        {tab==="monthly"    &&<MonthlyTab    state={state} update={update}/>}
+        {tab==="predeposit" &&<PreDeposit    state={state} update={update}/>}
+        {tab==="gaoyin"     &&<GaoyinTab     state={state} update={update}/>}
+        {tab==="debt"       &&<DebtTab       state={state} update={update}/>}
+        {tab==="credit"     &&<CreditTab     state={state} update={update}/>}
+        {tab==="insurance"  &&<InsuranceTab  state={state} update={update}/>}
+        {tab==="car"        &&<CarTab        state={state} update={update}/>}
+        {tab==="yearly"     &&<YearlyTab     state={state} update={update}/>}
+      </div>
+    </div>
+  );
+}
+
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App/>);
+</script>
+</body>
+</html>
