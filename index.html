@@ -75,7 +75,7 @@ const BLANK_MONTH = () => ({
 
 const BLANK_GAOYIN = () => ({
   天菁存:0,天菁出:0,冠葦存:0,冠葦出:0,
-  東朔存:0,東朔出:0,昕諺存:0,昕諺出:0,總金額:0,
+  Wlison存:0,Wlison出:0,Wuli存:0,Wuli出:0,總金額:0,
 });
 
 // 預存金累積帳戶初始（全年追蹤，不分月）
@@ -841,16 +841,16 @@ function GaoyinTab({state,update}){
   const [editM,setEditM]=useState(null);
   const [editRow,setEditRow]=useState({});
 
-  // 人員設定：name=顯示名, expKey=月支出對應 key, 高銀手動存入用 gaoyinMonths
+  // 人員設定：全部連動月支出
   const persons=[
-    {name:"天菁", expKey:"保費天菁", color:G[700]},
-    {name:"冠葦", expKey:"保費冠葦", color:BLU},
-    {name:"東朔", expKey:"保費東朔", color:AMB},  // 東朔保費在月支出沒有獨立欄，手動
-    {name:"昕諺", expKey:"保費昕諺", color:RED},  // 同上
+    {name:"天菁",  expKey:"保費天菁",   color:G[700]},
+    {name:"冠葦",  expKey:"保費冠葦",   color:BLU},
+    {name:"Wlison",expKey:"保費Wlison", color:AMB},
+    {name:"Wuli",  expKey:"保費Wuli",   color:RED},
   ];
-  // 天菁/冠葦：從月支出 expense 讀取撥入（已存）；東朔/昕諺：從 gaoyinMonths 手動存入
-  const expKeyPersons=["天菁","冠葦"];
-  const manualPersons=["東朔","昕諺"];
+  // 全部從月支出自動讀取
+  const expKeyPersons=["天菁","冠葦","Wlison","Wuli"];
+  const manualPersons=[];
 
   const allM=state.gaoyinMonths;
   const save=()=>{update("gaoyinMonths",{...allM,[editM]:editRow});setEditM(null);};
@@ -894,7 +894,7 @@ function GaoyinTab({state,update}){
       {/* Header 全年累計 */}
       <div style={{background:`linear-gradient(135deg,${G[800]} 0%,${G[600]} 100%)`,padding:"14px 15px 12px"}}>
         <div style={{fontSize:11,color:G[200],marginBottom:4,fontWeight:600}}>高雄銀行保險帳戶 — 115年累計</div>
-        <div style={{fontSize:10,color:G[300],marginBottom:8}}>天菁・冠葦 自動連動月支出；東朔・昕諺 手動編輯</div>
+        <div style={{fontSize:10,color:G[300],marginBottom:8}}>天菁・冠葦・Wlison・Wuli 全部自動連動月支出</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
           {persons.map(({name,color})=>{
             const{dep,out,bal}=cumulAll(name);
@@ -912,7 +912,7 @@ function GaoyinTab({state,update}){
       </div>
 
       <div style={{padding:"9px 15px 2px",fontSize:11,color:G.muted}}>
-        天菁・冠葦保費自動從月支出讀取；東朔・昕諺點「編輯」手動輸入
+        所有人保費自動從月支出讀取，總金額仍可手動編輯
       </div>
 
       {/* 各月明細 */}
@@ -934,7 +934,7 @@ function GaoyinTab({state,update}){
 
             {editM===m?(
               <Card style={{margin:"0 14px 8px"}}>
-                <div style={{fontSize:11,color:G.muted,marginBottom:8}}>天菁・冠葦存入自動帶入，僅可編輯支出；東朔・昕諺存入需手動填</div>
+                <div style={{fontSize:11,color:G.muted,marginBottom:8}}>所有人存入自動帶入（來自月支出保費欄），僅可編輯支出金額</div>
                 {persons.map(({name,expKey,color})=>{
                   const isExp=expKeyPersons.includes(name);
                   const autoDep=isExp?(monthExp[expKey]||0):null;
@@ -1791,7 +1791,7 @@ function App(){
 }
 
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
+const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(<App/>);
 </script>
 </body>
