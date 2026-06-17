@@ -537,7 +537,7 @@ function RecordsList({usedItems,color,onDel}){
 // ═══════════════════════════════════════════════════════
 // 使用明細子元件（每個預存帳戶共用）
 // ═══════════════════════════════════════════════════════
-function UsedItemsSection({acctId,color,usedItems,itemOptions,usedByItem,onAdd,onDel}){
+function UsedItemsSection({acctId,color,usedItems,itemOptions,usedByItem,depositedByItem,onAdd,onDel}){
   const[selItem,setSelItem]=useState(itemOptions[0]||"");
   const[amt,setAmt]=useState(0);
   const[note,setNote]=useState("");
@@ -551,18 +551,43 @@ function UsedItemsSection({acctId,color,usedItems,itemOptions,usedByItem,onAdd,o
 
   return(
     <div>
-      {/* 各項目累計小字（按下拉項目分類） */}
+      {/* 各項目累計：存入 / 已使用 / 剩餘 */}
       <div style={{padding:"8px 10px",background:G[50],borderRadius:9,border:`1px solid ${G[100]}`,marginBottom:10}}>
-        <div style={{fontSize:10,fontWeight:700,color:G.sub,marginBottom:5}}>各項目使用累計</div>
-        <div style={{display:"flex",flexDirection:"column",gap:3}}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+          <span style={{fontSize:10,fontWeight:700,color:G.sub}}>各項目明細</span>
+          <span style={{fontSize:9,color:G.muted}}>存入 ／ 已用 ／ 剩餘</span>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:5}}>
           {itemOptions.map(item=>{
-            const v=usedByItem[item]||0;
+            const deposited=depositedByItem[item]||0;
+            const used=usedByItem[item]||0;
+            const remain=deposited-used;
             return(
-              <div key={item} style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span style={{fontSize:11,color:G.sub}}>{item}</span>
-                <span style={{fontSize:11,fontWeight:v>0?700:400,color:v>0?color:G.muted}}>
-                  {v>0?`NT$${v.toLocaleString()}`:"－"}
-                </span>
+              <div key={item}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
+                  <span style={{fontSize:11,color:G.sub,flex:1}}>{item}</span>
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <span style={{fontSize:10,color:color,fontWeight:deposited>0?600:400}}>
+                      {deposited>0?`+${deposited.toLocaleString()}`:"－"}
+                    </span>
+                    <span style={{fontSize:10,color:G.muted}}>／</span>
+                    <span style={{fontSize:10,color:RED,fontWeight:used>0?600:400}}>
+                      {used>0?`-${used.toLocaleString()}`:"－"}
+                    </span>
+                    <span style={{fontSize:10,color:G.muted}}>／</span>
+                    <span style={{fontSize:11,fontWeight:700,color:remain>0?G[700]:remain<0?RED:G.muted,minWidth:50,textAlign:"right"}}>
+                      {deposited===0&&used===0?"－":remain>=0?`NT$${remain.toLocaleString()}`:`-NT$${Math.abs(remain).toLocaleString()}`}
+                    </span>
+                  </div>
+                </div>
+                {(deposited>0||used>0)&&(
+                  <div style={{height:3,background:G[100],borderRadius:2}}>
+                    <div style={{height:3,borderRadius:2,
+                      width:deposited>0?Math.min(Math.round(used/deposited*100),100)+"%" :"0%",
+                      background:used>deposited?RED:used/deposited>0.8?AMB:color,transition:"width 0.4s"}}>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -754,15 +779,34 @@ function PreDeposit({state,update}){
               </div>
 
               {/* ── 使用明細記錄 ── */}
-              <UsedItemsSection
-                acctId={a.id}
-                color={a.color}
-                usedItems={usedItems}
-                itemOptions={itemOptions}
-                usedByItem={usedByItem}
-                onAdd={(newItem)=>setRA(a.id,"usedItems",[...usedItems,newItem])}
-                onDel={(idx)=>setRA(a.id,"usedItems",usedItems.filter((_,i)=>i!==idx))}
-              />
+              {(()=>{
+                // 各 expKey 全年存入加總，對應到 ACCT_ITEMS 的項目
+                // 中信: expKeys=[天菁電話費,冠葦電話費,網路費,水費,電費] 對應 ACCT_ITEMS 的項目名
+                const expKeyToItem={
+                  中信:   {天菁電話費:"天菁電話費",冠葦電話費:"冠葦電話費",網路費:"網路費",水費:"水費",電費:"電費"},
+                  天菁土銀:{停車天菁:"停車費（天菁）",停車冠葦:"停車費（冠葦）",管理費:"管理費"},
+                  冠葦土銀:{稅金:"稅金",汽車保養費:"汽車保養費"},
+                  冠葦郵局:{小孩存款:"Wuli存款"},
+                }[a.id]||{};
+                const depositedByItem={};
+                Object.entries(expKeyToItem).forEach(([expKey,itemName])=>{
+                  depositedByItem[itemName]=MONTHS_115.reduce((s,mo)=>{
+                    return s+((state.monthlyData[mo]||BLANK_MONTH()).expense[expKey]||0);
+                  },0);
+                });
+                return(
+                  <UsedItemsSection
+                    acctId={a.id}
+                    color={a.color}
+                    usedItems={usedItems}
+                    itemOptions={itemOptions}
+                    usedByItem={usedByItem}
+                    depositedByItem={depositedByItem}
+                    onAdd={(newItem)=>setRA(a.id,"usedItems",[...usedItems,newItem])}
+                    onDel={(idx)=>setRA(a.id,"usedItems",usedItems.filter((_,i)=>i!==idx))}
+                  />
+                );
+              })()}
 
               {/* 各月存入明細 */}
               <div style={{marginTop:12}}>
@@ -1747,7 +1791,7 @@ function App(){
 }
 
 
-const root = ReactDOM.createRoot(document.getElementById("root"));
+const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<App/>);
 </script>
 </body>
