@@ -292,9 +292,11 @@ function MonthlyTab({state,update}){
     update("monthlyData",next);
   };
 
-  // 合計
-  const totalIn  = Object.values(income).reduce((s,v)=>s+v,0);
-  const totalOut = Object.values(expense).reduce((s,v)=>s+v,0);
+  // 合計 — 只算 BLANK_MONTH 定義的 keys，避免舊資料殘留造成重複計算
+  const VALID_EXP_KEYS = Object.keys(BLANK_MONTH().expense);
+  const VALID_INC_KEYS = Object.keys(BLANK_MONTH().income);
+  const totalIn  = VALID_INC_KEYS.reduce((s,k)=>s+(income[k]||0),0);
+  const totalOut = VALID_EXP_KEYS.reduce((s,k)=>s+(expense[k]||0),0);
   const totalRes = Object.values(reserve).reduce((s,v)=>s+v,0);
 
   // Row_ 為 inline helper（非 component），直接 return JSX array
@@ -1659,6 +1661,15 @@ function App(){
       const raw=localStorage.getItem(STORAGE_KEY);
       if(raw){
         const saved=JSON.parse(raw);
+        // 資料遷移：清除舊的 信貸 key，避免與新的 LINE銀行/國泰 重複
+        if(saved.monthlyData){
+          Object.keys(saved.monthlyData).forEach(m=>{
+            const exp=saved.monthlyData[m]?.expense;
+            if(exp && '信貸' in exp){
+              delete exp['信貸'];
+            }
+          });
+        }
         setState(prev=>({...prev,...saved}));
         setSaveStatus("已載入");
       } else {
