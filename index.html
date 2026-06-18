@@ -61,7 +61,7 @@ const BLANK_MONTH = () => ({
     房貸土銀:0, 管理費:0,
     車貸天菁:0, 車貸冠葦:0,
     小孩存款:0, 稅金:0, 汽車保養費:0,
-    信貸:0, 其他:0,
+    國泰:0, LINE銀行:0, 其他:0,
   },
   reserve: {
     中信月存:0,       // → 天菁中信累積
@@ -443,12 +443,20 @@ function MonthlyTab({state,update}){
         </Card>
       </Sec>
 
+      {/* ── 貸款 ── */}
+      <Sec title="🏦 貸款" color={G.sub}>
+        <Card style={{margin:"6px 14px"}}>
+          <Row_ k="國泰" label="國泰" />
+          <Row_ k="LINE銀行" label="LINE銀行" />
+          <SubTotal items={["國泰","LINE銀行"]} />
+        </Card>
+      </Sec>
+
       {/* ── 其他 ── */}
       <Sec title="📦 其他" color={G.muted}>
         <Card style={{margin:"6px 14px"}}>
-          <Row_ k="信貸" label="信貸" />
           <Row_ k="其他" label="其他" />
-          <SubTotal items={["信貸","其他"]} />
+          <SubTotal items={["其他"]} />
         </Card>
       </Sec>
 
@@ -1391,7 +1399,8 @@ function YearlyTab({state,update}){
     管理費:     ["停車費","管理費"],
     兒子學費諺: ["學費","Wuli學費"],
     朔轉帳:    ["學費","Wlison學費"],
-    信貸:      ["貸款","國泰信貸"],
+    國泰:  ["貸款","國泰"],
+    LINE銀行:  ["貸款","LINE銀行"],
     車貸天菁:  ["貸款","車貸天菁"],
     車貸冠葦:  ["貸款","車貸冠葦"],
     房貸土銀:  ["貸款","房貸"],
@@ -1433,7 +1442,7 @@ function YearlyTab({state,update}){
     {label:"保險費",subs:["天菁","冠葦","Wuli","Wlison"]},
     {label:"停車費",subs:["天菁停車","冠葦停車","管理費"]},
     {label:"學費",subs:["Wuli學費","Wlison學費"]},
-    {label:"貸款",subs:["國泰信貸","車貸天菁","車貸冠葦","房貸"]},
+    {label:"貸款",subs:["國泰","LINE銀行","車貸天菁","車貸冠葦","房貸"]},
     {label:"信用卡",subs:["中信（天）","天土銀","吳土銀","吳一銀","元大","富邦（不含保費）"]},
     {label:"稅金・保養",subs:["稅金","汽車保養費"]},
     {label:"其他",subs:["小孩存款","其他支出"]},
