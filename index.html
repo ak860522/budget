@@ -100,7 +100,9 @@ const INIT = {
   gaoyinMonths: Object.fromEntries(MONTHS_115.map(m=>[m,BLANK_GAOYIN()])),
   reserveAccounts: BLANK_RESERVE(),
   debts: [],
-  creditCards: { "中信（天）":[], "天土銀":[], "吳一銀":[], "吳土銀":[], "元大":[], "富邦（不含保費）":[] },
+  creditCards: Object.fromEntries(MONTHS_115.map(m=>[m,{
+    "中信（天）":[], "天土銀":[], "吳一銀":[], "吳土銀":[], "元大":[], "富邦（不含保費）":[]
+  }])),
   insurance: [],
   car: {
     "BJR-3320":{ 牌照稅:0,牌照月:"4月",燃料稅:0,燃料月:"7月",保養金額:0,保養頻率:2 },
@@ -1130,9 +1132,10 @@ function CreditTab({state,update}){
   const[active,setActive]=useState("中信（天）");
   const[newItem,setNewItem]=useState({項目:"",金額:0});
 
-  const cards=state.creditCards;
   const m=state.currentMonth;
-  const ensureBank=(b)=>cards[b]||[];
+  // 當月信用卡資料（按月份獨立）
+  const monthCards=state.creditCards[m]||{"中信（天）":[],"天土銀":[],"吳一銀":[],"吳土銀":[],"元大":[],"富邦（不含保費）":[]};
+  const ensureBank=(b)=>monthCards[b]||[];
 
   // 同步更新月支出 expense 對應欄位
   const syncMonthly=(bankLabel, newItems)=>{
@@ -1140,31 +1143,30 @@ function CreditTab({state,update}){
     if(!bank) return;
     const total=newItems.reduce((s,i)=>s+i.金額,0);
     const monthData=state.monthlyData[m]||BLANK_MONTH();
-    const nextMonthly={
+    update("monthlyData",{
       ...state.monthlyData,
       [m]:{...monthData, expense:{...monthData.expense, [bank.expKey]:total}}
-    };
-    update("monthlyData", nextMonthly);
+    });
   };
 
   const addItem=()=>{
     if(!newItem.項目||!newItem.金額)return;
     const newItems=[...ensureBank(active),{...newItem}];
-    update("creditCards",{...cards,[active]:newItems});
+    update("creditCards",{...state.creditCards,[m]:{...monthCards,[active]:newItems}});
     syncMonthly(active, newItems);
     setNewItem({項目:"",金額:0});
   };
   const delItem=(bank,idx)=>{
     const newItems=ensureBank(bank).filter((_,i)=>i!==idx);
-    update("creditCards",{...cards,[bank]:newItems});
+    update("creditCards",{...state.creditCards,[m]:{...monthCards,[bank]:newItems}});
     syncMonthly(bank, newItems);
   };
 
-  // 月支出當月消費金額（從 expense 讀，已連動）
+  // 月支出當月消費金額
   const monthExp=(state.monthlyData[m]||BLANK_MONTH()).expense;
   const getMonthlyAmt=(expKey)=>monthExp[expKey]||0;
 
-  // 全部銀行總計（手動明細合計）
+  // 全部銀行總計（當月手動明細合計）
   const grandTotal=BANKS.reduce((s,b)=>s+ensureBank(b.label).reduce((ss,i)=>ss+i.金額,0),0);
 
   const activBank=BANKS.find(b=>b.label===active)||BANKS[0];
