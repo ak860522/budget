@@ -155,29 +155,21 @@ const Sec=({title,color=G[600],children})=>(
 );
 const Divider=()=><div style={{height:1,background:G.border,margin:"6px 0"}}/>;
 
+// NI: 完全 uncontrolled，不使用任何 React state
+// key 由外部控制（換月份時換 key，強制重建 DOM）
 function NI({value,onChange,label,style,placeholder}){
-  const ref=useRef(null);
-  // 只在非 focus 狀態下同步外部 value 到 input
-  useEffect(()=>{
-    const el=ref.current;
-    if(el && el!==document.activeElement){
-      el.value=value===0?"":String(value);
-    }
-  },[value]);
   return(
     <div style={{flex:1,...style}}>
       {label&&<div style={{fontSize:11,color:G.sub,marginBottom:3,fontWeight:600}}>{label}</div>}
       <div style={{display:"flex",alignItems:"center",border:`1.5px solid ${G.border}`,borderRadius:9,overflow:"hidden",background:"#fff"}}>
         <span style={{padding:"8px 6px 8px 9px",fontSize:11,color:G.muted,background:G[50],borderRight:`1px solid ${G.border}`,flexShrink:0}}>NT$</span>
         <input
-          ref={ref}
           type="number"
           inputMode="numeric"
           defaultValue={value===0?"":String(value)}
           placeholder={placeholder||"0"}
           onBlur={e=>{
             const n=Number(e.target.value)||0;
-            e.target.value=n===0?"":String(n);
             onChange(n);
           }}
           style={{flex:1,border:"none",padding:"8px 9px",fontSize:15,background:"#fff",color:G.text,outline:"none",minWidth:0}}
@@ -1832,11 +1824,11 @@ function App(){
       </div>
       {/* 畫面 */}
       <div style={{flex:1,overflowY:"auto"}}>
-        {tab==="monthly"    &&<MonthlyTab    state={state} update={update}/>}
+        {tab==="monthly"    &&<MonthlyTab    key={state.currentMonth} state={state} update={update}/>}
         {tab==="predeposit" &&<PreDeposit    state={state} update={update}/>}
         {tab==="gaoyin"     &&<GaoyinTab     state={state} update={update}/>}
         {tab==="debt"       &&<DebtTab       state={state} update={update}/>}
-        {tab==="credit"     &&<CreditTab     state={state} update={update}/>}
+        {tab==="credit"     &&<CreditTab     key={state.currentMonth} state={state} update={update}/>}
         {tab==="insurance"  &&<InsuranceTab  state={state} update={update}/>}
         {tab==="car"        &&<CarTab        state={state} update={update}/>}
         {tab==="yearly"     &&<YearlyTab     state={state} update={update}/>}
