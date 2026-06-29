@@ -266,6 +266,41 @@ function MonthPicker({current,onChange}){
 }
 
 // ═══════════════════════════════════════════════════════
+// MonthRow / MonthSubTotal — 模組級元件（關鍵！必須在 MonthlyTab 外定義）
+// 這樣 MonthlyTab re-render 時不會重建這些元件，input 才不會跳掉
+// ═══════════════════════════════════════════════════════
+function MonthRow({k, label, section, val, ck, onchange, oncheck}){
+  return(
+    <div style={{display:"grid",gridTemplateColumns:"1fr 28px",alignItems:"end",gap:8,marginBottom:9}}>
+      <NI label={label} value={val} onChange={v=>onchange(section,k,v)} />
+      <div style={{paddingBottom:2,display:"flex",justifyContent:"center"}}>
+        <button onClick={()=>oncheck(k,!ck)} style={{
+          width:26,height:26,borderRadius:7,flexShrink:0,
+          border:`2px solid ${ck?G[600]:G.border}`,
+          background:ck?G[600]:"#fff",
+          display:"flex",alignItems:"center",justifyContent:"center",
+          cursor:"pointer",transition:"all 0.15s",
+        }}>{ck&&<span style={{color:"#fff",fontSize:12,fontWeight:900,lineHeight:1}}>✓</span>}</button>
+      </div>
+    </div>
+  );
+}
+
+function MonthSubTotal({items, section, data, color=G.sub}){
+  const {income,expense,reserve}=data;
+  const total=items.reduce((s,k)=>{
+    const v=section==="income"?(income[k]||0):section==="reserve"?(reserve[k]||0):(expense[k]||0);
+    return s+v;
+  },0);
+  return(
+    <div style={{display:"flex",justifyContent:"space-between",borderTop:`1px solid ${G.border}`,paddingTop:7,marginTop:3}}>
+      <span style={{fontSize:12,color:G.muted,fontWeight:600}}>小計</span>
+      <AnimNum value={total} color={color} size={14} bold />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
 // 月支出 分頁 — 完整收入分配表
 // ═══════════════════════════════════════════════════════
 function MonthlyTab({state,update}){
@@ -281,43 +316,17 @@ function MonthlyTab({state,update}){
     update("monthlyData",{...state.monthlyData,[m]:{...data,note:val}});
   };
 
+  // 短名，傳給 MonthRow
+  const sf=setField;
+  const sc=setChecked;
+
   const VALID_EXP_KEYS = Object.keys(BLANK_MONTH().expense);
   const VALID_INC_KEYS = Object.keys(BLANK_MONTH().income);
   const totalIn  = VALID_INC_KEYS.reduce((s,k)=>s+(income[k]||0),0);
   const totalOut = VALID_EXP_KEYS.reduce((s,k)=>s+(expense[k]||0),0);
   const totalRes = Object.values(reserve).reduce((s,v)=>s+v,0);
 
-  const Row_=({k,label,section="expense"})=>{
-    const val = section==="expense"?(expense[k]||0):section==="reserve"?(reserve[k]||0):(income[k]||0);
-    const ck  = checked[k]||false;
-    return(
-      <div style={{display:"grid",gridTemplateColumns:"1fr 28px",alignItems:"end",gap:8,marginBottom:9}}>
-        <NI label={label} value={val} onChange={v=>setField(section,k,v)} />
-        <div style={{paddingBottom:2,display:"flex",justifyContent:"center"}}>
-          <button onClick={()=>setChecked(k,!ck)} style={{
-            width:26,height:26,borderRadius:7,flexShrink:0,
-            border:`2px solid ${ck?G[600]:G.border}`,
-            background:ck?G[600]:"#fff",
-            display:"flex",alignItems:"center",justifyContent:"center",
-            cursor:"pointer",transition:"all 0.15s",
-          }}>{ck&&<span style={{color:"#fff",fontSize:12,fontWeight:900,lineHeight:1}}>✓</span>}</button>
-        </div>
-      </div>
-    );
-  };
 
-  const SubTotal=({items,section="expense",color=G.sub})=>{
-    const total=items.reduce((s,k)=>{
-      const v=section==="expense"?(expense[k]||0):section==="reserve"?(reserve[k]||0):(income[k]||0);
-      return s+v;
-    },0);
-    return(
-      <div style={{display:"flex",justifyContent:"space-between",borderTop:`1px solid ${G.border}`,paddingTop:7,marginTop:3}}>
-        <span style={{fontSize:12,color:G.muted,fontWeight:600}}>小計</span>
-        <AnimNum value={total} color={color} size={14} bold />
-      </div>
-    );
-  };
 
   return(
     <div style={{paddingBottom:28}}>
@@ -328,136 +337,136 @@ function MonthlyTab({state,update}){
       <Sec title="💰 收入" color={G[700]}>
         <Card style={{margin:"6px 14px"}}>
           {[["天","薪資（天）"],["吳","薪資（吳）"],["蝦皮","蝦皮兼職"],["Wuli托育","Wuli托育費"],["Wlison托育","Wlison托育費"],["其他","其他收入"]].map(([k,l])=>(
-            <Row_ key={k} k={k} label={l} section="income" />
+            <MonthRow k="" label="" section="income" val={(income[""]||0)} ck={checked[""]||false} onchange={sf} oncheck={sc} />
           ))}
-          <SubTotal items={["天","吳","蝦皮","Wuli托育","Wlison托育","其他"]} section="income" color={G[700]} />
+          <MonthSubTotal items={["天","吳","蝦皮","Wuli托育","Wlison托育","其他"]} section="income" data={data} color={G[700]} />
         </Card>
       </Sec>
 
       {/* ── 生活費 ── */}
       <Sec title="🏠 生活費" color={G[700]}>
         <Card style={{margin:"6px 14px"}}>
-          <Row_ k="生活費天菁" label="生活費（天菁）" />
-          <Row_ k="生活費冠葦" label="生活費（冠葦）" />
-          <SubTotal items={["生活費天菁","生活費冠葦"]} />
+          <MonthRow k="生活費天菁" label="生活費（天菁）" section="expense" val={(expense["生活費天菁"]||0)} ck={checked["生活費天菁"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="生活費冠葦" label="生活費（冠葦）" section="expense" val={(expense["生活費冠葦"]||0)} ck={checked["生活費冠葦"]||false} onchange={sf} oncheck={sc} />
+          <MonthSubTotal items={["生活費天菁","生活費冠葦"]} section="expense" data={data} color={G.sub} />
         </Card>
       </Sec>
 
       {/* ── 信用卡 ── */}
       <Sec title="💳 信用卡費" color={BLU}>
         <Card style={{margin:"6px 14px"}}>
-          <Row_ k="中信天"  label="中信（天）" />
-          <Row_ k="天土銀"  label="天土銀" />
-          <Row_ k="吳土銀"  label="吳土銀" />
-          <Row_ k="第一吳"  label="第一（吳，不含學費）" />
-          <Row_ k="元大"    label="元大" />
-          <Row_ k="富邦"    label="富邦（不含保費）" />
-          <SubTotal items={["中信天","天土銀","吳土銀","第一吳","元大","富邦"]} color={BLU} />
+          <MonthRow k="中信天" label="中信（天）" section="expense" val={(expense["中信天"]||0)} ck={checked["中信天"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="天土銀" label="天土銀" section="expense" val={(expense["天土銀"]||0)} ck={checked["天土銀"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="吳土銀" label="吳土銀" section="expense" val={(expense["吳土銀"]||0)} ck={checked["吳土銀"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="第一吳" label="第一（吳，不含學費）" section="expense" val={(expense["第一吳"]||0)} ck={checked["第一吳"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="元大" label="元大" section="expense" val={(expense["元大"]||0)} ck={checked["元大"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="富邦" label="富邦（不含保費）" section="expense" val={(expense["富邦"]||0)} ck={checked["富邦"]||false} onchange={sf} oncheck={sc} />
+          <MonthSubTotal items={["中信天","天土銀","吳土銀","第一吳","元大","富邦"]} section="expense" data={data} color={BLU} />
         </Card>
       </Sec>
 
       {/* ── 兒子學費 ── */}
       <Sec title="🎓 兒子學費" color={AMB}>
         <Card style={{margin:"6px 14px"}}>
-          <Row_ k="兒子學費諺" label="諺（信用卡學費）" />
-          <Row_ k="朔轉帳"     label="朔（轉帳學費）" />
-          <SubTotal items={["兒子學費諺","朔轉帳"]} color={AMB} />
+          <MonthRow k="兒子學費諺" label="諺（信用卡學費）" section="expense" val={(expense["兒子學費諺"]||0)} ck={checked["兒子學費諺"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="朔轉帳" label="朔（轉帳學費）" section="expense" val={(expense["朔轉帳"]||0)} ck={checked["朔轉帳"]||false} onchange={sf} oncheck={sc} />
+          <MonthSubTotal items={["兒子學費諺","朔轉帳"]} section="expense" data={data} color={AMB} />
         </Card>
       </Sec>
 
       {/* ── 兒子預存（註冊費/保母費）→ 冠葦郵局 ── */}
       <Sec title="📮 諺註冊費・朔保母費 → 冠葦郵局預存金" color={G[600]}>
         <Card style={{margin:"6px 14px"}}>
-          <Row_ k="諺註冊費" label="諺－註冊費（預存）" />
-          <Row_ k="朔保母費" label="朔－保母費（預存）" />
-          <SubTotal items={["諺註冊費","朔保母費"]} color={G[600]} />
+          <MonthRow k="諺註冊費" label="諺－註冊費（預存）" section="expense" val={(expense["諺註冊費"]||0)} ck={checked["諺註冊費"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="朔保母費" label="朔－保母費（預存）" section="expense" val={(expense["朔保母費"]||0)} ck={checked["朔保母費"]||false} onchange={sf} oncheck={sc} />
+          <MonthSubTotal items={["諺註冊費","朔保母費"]} section="expense" data={data} color={G[600]} />
         </Card>
       </Sec>
 
       {/* ── 停車費＋管理費→天菁土銀預存金 ── */}
       <Sec title="🅿 停車費・管理費 → 天菁土銀預存金" color={G[700]}>
         <Card style={{margin:"6px 14px"}}>
-          <Row_ k="停車天菁" label="停車費（天菁）" />
-          <Row_ k="停車冠葦" label="停車費（冠葦）" />
-          <Row_ k="管理費"   label="管理費（預存）" />
-          <SubTotal items={["停車天菁","停車冠葦","管理費"]} color={G[700]} />
+          <MonthRow k="停車天菁" label="停車費（天菁）" section="expense" val={(expense["停車天菁"]||0)} ck={checked["停車天菁"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="停車冠葦" label="停車費（冠葦）" section="expense" val={(expense["停車冠葦"]||0)} ck={checked["停車冠葦"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="管理費" label="管理費（預存）" section="expense" val={(expense["管理費"]||0)} ck={checked["管理費"]||false} onchange={sf} oncheck={sc} />
+          <MonthSubTotal items={["停車天菁","停車冠葦","管理費"]} section="expense" data={data} color={G[700]} />
         </Card>
       </Sec>
 
       {/* ── 生活雜支→中信預存金 ── */}
       <Sec title="📲 生活雜支 → 中信預存金" color={G[600]}>
         <Card style={{margin:"6px 14px"}}>
-          <Row_ k="天菁電話費" label="天菁電話費" />
-          <Row_ k="冠葦電話費" label="冠葦電話費" />
-          <Row_ k="網路費"     label="網路費" />
-          <Row_ k="水費"       label="水費" />
-          <Row_ k="電費"       label="電費" />
-          <SubTotal items={["天菁電話費","冠葦電話費","網路費","水費","電費"]} color={G[600]} />
+          <MonthRow k="天菁電話費" label="天菁電話費" section="expense" val={(expense["天菁電話費"]||0)} ck={checked["天菁電話費"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="冠葦電話費" label="冠葦電話費" section="expense" val={(expense["冠葦電話費"]||0)} ck={checked["冠葦電話費"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="網路費" label="網路費" section="expense" val={(expense["網路費"]||0)} ck={checked["網路費"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="水費" label="水費" section="expense" val={(expense["水費"]||0)} ck={checked["水費"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="電費" label="電費" section="expense" val={(expense["電費"]||0)} ck={checked["電費"]||false} onchange={sf} oncheck={sc} />
+          <MonthSubTotal items={["天菁電話費","冠葦電話費","網路費","水費","電費"]} section="expense" data={data} color={G[600]} />
         </Card>
       </Sec>
 
       {/* ── 保險費→高銀 ── */}
       <Sec title="🛡 保險費 → 高銀預存金" color={RED}>
         <Card style={{margin:"6px 14px"}}>
-          <Row_ k="保費天菁"   label="天菁" />
-          <Row_ k="保費冠葦"   label="冠葦" />
-          <Row_ k="保費Wuli"   label="Wuli" />
-          <Row_ k="保費Wlison" label="Wlison" />
-          <SubTotal items={["保費天菁","保費冠葦","保費Wuli","保費Wlison"]} color={RED} />
+          <MonthRow k="保費天菁" label="天菁" section="expense" val={(expense["保費天菁"]||0)} ck={checked["保費天菁"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="保費冠葦" label="冠葦" section="expense" val={(expense["保費冠葦"]||0)} ck={checked["保費冠葦"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="保費Wuli" label="Wuli" section="expense" val={(expense["保費Wuli"]||0)} ck={checked["保費Wuli"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="保費Wlison" label="Wlison" section="expense" val={(expense["保費Wlison"]||0)} ck={checked["保費Wlison"]||false} onchange={sf} oncheck={sc} />
+          <MonthSubTotal items={["保費天菁","保費冠葦","保費Wuli","保費Wlison"]} section="expense" data={data} color={RED} />
         </Card>
       </Sec>
 
       {/* ── 房子→土銀 ── */}
       <Sec title="🏦 房貸 → 土銀" color={G.sub}>
         <Card style={{margin:"6px 14px"}}>
-          <Row_ k="房貸土銀" label="房貸（土銀自動扣）" />
-          <SubTotal items={["房貸土銀"]} />
+          <MonthRow k="房貸土銀" label="房貸（土銀自動扣）" section="expense" val={(expense["房貸土銀"]||0)} ck={checked["房貸土銀"]||false} onchange={sf} oncheck={sc} />
+          <MonthSubTotal items={["房貸土銀"]} section="expense" data={data} color={G.sub} />
         </Card>
       </Sec>
 
       {/* ── 車貸 ── */}
       <Sec title="🚗 車貸" color={AMB}>
         <Card style={{margin:"6px 14px"}}>
-          <Row_ k="車貸天菁" label="天菁" />
-          <Row_ k="車貸冠葦" label="冠葦" />
-          <SubTotal items={["車貸天菁","車貸冠葦"]} color={AMB} />
+          <MonthRow k="車貸天菁" label="天菁" section="expense" val={(expense["車貸天菁"]||0)} ck={checked["車貸天菁"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="車貸冠葦" label="冠葦" section="expense" val={(expense["車貸冠葦"]||0)} ck={checked["車貸冠葦"]||false} onchange={sf} oncheck={sc} />
+          <MonthSubTotal items={["車貸天菁","車貸冠葦"]} section="expense" data={data} color={AMB} />
         </Card>
       </Sec>
 
       {/* ── 冠葦土銀預存金（稅金＋保養） ── */}
       <Sec title="🏦 稅金・保養 → 冠葦土銀預存金" color={AMB}>
         <Card style={{margin:"6px 14px"}}>
-          <Row_ k="燃料稅"   label="燃料稅" />
-          <Row_ k="牌照稅"   label="牌照稅" />
-          <Row_ k="綜所稅"   label="綜合所得稅" />
-          <Row_ k="房屋稅"   label="房屋稅" />
-          <Row_ k="汽車保養費" label="汽車保養費（3,700）" />
-          <SubTotal items={["燃料稅","牌照稅","綜所稅","房屋稅","汽車保養費"]} color={AMB} />
+          <MonthRow k="燃料稅" label="燃料稅" section="expense" val={(expense["燃料稅"]||0)} ck={checked["燃料稅"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="牌照稅" label="牌照稅" section="expense" val={(expense["牌照稅"]||0)} ck={checked["牌照稅"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="綜所稅" label="綜合所得稅" section="expense" val={(expense["綜所稅"]||0)} ck={checked["綜所稅"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="房屋稅" label="房屋稅" section="expense" val={(expense["房屋稅"]||0)} ck={checked["房屋稅"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="汽車保養費" label="汽車保養費（3,700）" section="expense" val={(expense["汽車保養費"]||0)} ck={checked["汽車保養費"]||false} onchange={sf} oncheck={sc} />
+          <MonthSubTotal items={["燃料稅","牌照稅","綜所稅","房屋稅","汽車保養費"]} section="expense" data={data} color={AMB} />
         </Card>
       </Sec>
 
       {/* ── 冠葦郵局預存金（小孩存款） ── */}
       <Sec title="📮 小孩存款 → 冠葦郵局預存金" color={G[600]}>
         <Card style={{margin:"6px 14px"}}>
-          <Row_ k="小孩存款" label="小孩存款（冠葦郵局）" />
-          <SubTotal items={["小孩存款"]} color={G[600]} />
+          <MonthRow k="小孩存款" label="小孩存款（冠葦郵局）" section="expense" val={(expense["小孩存款"]||0)} ck={checked["小孩存款"]||false} onchange={sf} oncheck={sc} />
+          <MonthSubTotal items={["小孩存款"]} section="expense" data={data} color={G[600]} />
         </Card>
       </Sec>
 
       {/* ── 貸款 ── */}
       <Sec title="🏦 貸款" color={G.sub}>
         <Card style={{margin:"6px 14px"}}>
-          <Row_ k="國泰" label="國泰" />
-          <Row_ k="LINE銀行" label="LINE銀行" />
-          <SubTotal items={["國泰","LINE銀行"]} />
+          <MonthRow k="國泰" label="國泰" section="expense" val={(expense["國泰"]||0)} ck={checked["國泰"]||false} onchange={sf} oncheck={sc} />
+          <MonthRow k="LINE銀行" label="LINE銀行" section="expense" val={(expense["LINE銀行"]||0)} ck={checked["LINE銀行"]||false} onchange={sf} oncheck={sc} />
+          <MonthSubTotal items={["國泰","LINE銀行"]} section="expense" data={data} color={G.sub} />
         </Card>
       </Sec>
 
       {/* ── 其他 ── */}
       <Sec title="📦 其他" color={G.muted}>
         <Card style={{margin:"6px 14px"}}>
-          <Row_ k="其他" label="其他" />
-          <SubTotal items={["其他"]} />
+          <MonthRow k="其他" label="其他" section="expense" val={(expense["其他"]||0)} ck={checked["其他"]||false} onchange={sf} oncheck={sc} />
+          <MonthSubTotal items={["其他"]} section="expense" data={data} color={G.sub} />
         </Card>
       </Sec>
 
