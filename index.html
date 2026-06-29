@@ -114,30 +114,11 @@ const INIT = {
 };
 
 // ═══════════════════════════════════════════════════════
-// AnimNum — 滾動入場數字
+// AnimNum — 靜態數字（移除動畫，避免 re-render 干擾輸入）
 // ═══════════════════════════════════════════════════════
 function AnimNum({ value, color, size=16, bold=true, prefix="NT$" }) {
-  const [disp,setDisp] = useState(value);
-  const prev = useRef(value);
-  const raf  = useRef(null);
-  useEffect(()=>{
-    if(prev.current===value) return;
-    const start=prev.current; prev.current=value;
-    const t0=performance.now();
-    const dur=480;
-    const run=(now)=>{
-      const p=Math.min((now-t0)/dur,1);
-      const e=1-Math.pow(1-p,3);
-      setDisp(Math.round(start+(value-start)*e));
-      if(p<1) raf.current=requestAnimationFrame(run);
-      else setDisp(value);
-    };
-    if(raf.current) cancelAnimationFrame(raf.current);
-    raf.current=requestAnimationFrame(run);
-    return ()=>{ if(raf.current) cancelAnimationFrame(raf.current); };
-  },[value]);
   return <span style={{fontSize:size,fontWeight:bold?700:400,color,letterSpacing:"-0.01em"}}>
-    {disp<0?"-":""}{prefix}{Math.abs(disp).toLocaleString()}
+    {value<0?"-":""}{prefix}{Math.abs(value).toLocaleString()}
   </span>;
 }
 
