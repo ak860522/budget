@@ -155,22 +155,39 @@ const Sec=({title,color=G[600],children})=>(
 );
 const Divider=()=><div style={{height:1,background:G.border,margin:"6px 0"}}/>;
 
-// NI: 完全 uncontrolled，不使用任何 React state
-// key 由外部控制（換月份時換 key，強制重建 DOM）
-function NI({value,onChange,label,style,placeholder}){
+// StableInput / NI：完全穩定的數字輸入框
+// - 不使用任何 React state，完全不觸發 re-render
+// - 用 useRef 持有 DOM，value 變化時只在非 focus 時同步
+// - onBlur 時呼叫 onChange，一次寫回
+function NI({value, onChange, label, style, placeholder}){
+  const inputRef = useRef(null);
+  const lastVal  = useRef(value);
+
+  // 當外部 value 改變且 input 不在 focus，才同步 DOM
+  useEffect(()=>{
+    const el = inputRef.current;
+    if(!el) return;
+    if(el === document.activeElement) return; // 正在輸入，不干擾
+    if(lastVal.current === value) return;
+    lastVal.current = value;
+    el.value = value === 0 ? "" : String(value);
+  });
+
   return(
     <div style={{flex:1,...style}}>
-      {label&&<div style={{fontSize:11,color:G.sub,marginBottom:3,fontWeight:600}}>{label}</div>}
+      {label && <div style={{fontSize:11,color:G.sub,marginBottom:3,fontWeight:600}}>{label}</div>}
       <div style={{display:"flex",alignItems:"center",border:`1.5px solid ${G.border}`,borderRadius:9,overflow:"hidden",background:"#fff"}}>
         <span style={{padding:"8px 6px 8px 9px",fontSize:11,color:G.muted,background:G[50],borderRight:`1px solid ${G.border}`,flexShrink:0}}>NT$</span>
         <input
+          ref={inputRef}
           type="number"
           inputMode="numeric"
-          defaultValue={value===0?"":String(value)}
-          placeholder={placeholder||"0"}
+          defaultValue={value === 0 ? "" : String(value)}
+          placeholder={placeholder || "0"}
           onBlur={e=>{
-            const n=Number(e.target.value)||0;
-            onChange(n);
+            const n = Number(e.target.value) || 0;
+            lastVal.current = n;
+            if(onChange) onChange(n);
           }}
           style={{flex:1,border:"none",padding:"8px 9px",fontSize:15,background:"#fff",color:G.text,outline:"none",minWidth:0}}
         />
@@ -275,31 +292,26 @@ function MonthlyTab({state,update}){
   const data=state.monthlyData[m]||BLANK_MONTH();
   const {income,expense,reserve,checked,note}=data;
 
-  // 通用 setter
   const setField=(section,key,val)=>{
-    const next={...state.monthlyData,[m]:{...data,[section]:{...data[section],[key]:val}}};
-    update("monthlyData",next);
+    update("monthlyData",{...state.monthlyData,[m]:{...data,[section]:{...data[section],[key]:val}}});
   };
   const setChecked=(key,val)=>setField("checked",key,val);
   const setNote=(val)=>{
-    const next={...state.monthlyData,[m]:{...data,note:val}};
-    update("monthlyData",next);
+    update("monthlyData",{...state.monthlyData,[m]:{...data,note:val}});
   };
 
-  // 合計 — 只算 BLANK_MONTH 定義的 keys，避免舊資料殘留造成重複計算
   const VALID_EXP_KEYS = Object.keys(BLANK_MONTH().expense);
   const VALID_INC_KEYS = Object.keys(BLANK_MONTH().income);
   const totalIn  = VALID_INC_KEYS.reduce((s,k)=>s+(income[k]||0),0);
   const totalOut = VALID_EXP_KEYS.reduce((s,k)=>s+(expense[k]||0),0);
   const totalRes = Object.values(reserve).reduce((s,v)=>s+v,0);
 
-  // Row_：包成 memo 元件，key 加月份避免跨月重用同一 input DOM
   const Row_=({k,label,section="expense"})=>{
-    const val = section==="expense" ? (expense[k]||0) : section==="reserve" ? (reserve[k]||0) : (income[k]||0);
+    const val = section==="expense"?(expense[k]||0):section==="reserve"?(reserve[k]||0):(income[k]||0);
     const ck  = checked[k]||false;
     return(
       <div style={{display:"grid",gridTemplateColumns:"1fr 28px",alignItems:"end",gap:8,marginBottom:9}}>
-        <NI key={`${m}-${section}-${k}`} label={label} value={val} onChange={v=>setField(section,k,v)} />
+        <NI label={label} value={val} onChange={v=>setField(section,k,v)} />
         <div style={{paddingBottom:2,display:"flex",justifyContent:"center"}}>
           <button onClick={()=>setChecked(k,!ck)} style={{
             width:26,height:26,borderRadius:7,flexShrink:0,
