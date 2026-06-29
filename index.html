@@ -156,11 +156,13 @@ const Sec=({title,color=G[600],children})=>(
 const Divider=()=><div style={{height:1,background:G.border,margin:"6px 0"}}/>;
 
 function NI({value,onChange,label,style,placeholder}){
-  // local string state：讓使用者可以連續輸入，onBlur 才 commit
-  const [local,setLocal]=useState(value===0?"":String(value));
-  const focused=useRef(false);
+  const ref=useRef(null);
+  // 只在非 focus 狀態下同步外部 value 到 input
   useEffect(()=>{
-    if(!focused.current) setLocal(value===0?"":String(value));
+    const el=ref.current;
+    if(el && el!==document.activeElement){
+      el.value=value===0?"":String(value);
+    }
   },[value]);
   return(
     <div style={{flex:1,...style}}>
@@ -168,16 +170,14 @@ function NI({value,onChange,label,style,placeholder}){
       <div style={{display:"flex",alignItems:"center",border:`1.5px solid ${G.border}`,borderRadius:9,overflow:"hidden",background:"#fff"}}>
         <span style={{padding:"8px 6px 8px 9px",fontSize:11,color:G.muted,background:G[50],borderRight:`1px solid ${G.border}`,flexShrink:0}}>NT$</span>
         <input
+          ref={ref}
           type="number"
           inputMode="numeric"
-          value={local}
+          defaultValue={value===0?"":String(value)}
           placeholder={placeholder||"0"}
-          onFocus={()=>{ focused.current=true; }}
-          onChange={e=>setLocal(e.target.value)}
           onBlur={e=>{
-            focused.current=false;
             const n=Number(e.target.value)||0;
-            setLocal(n===0?"":String(n));
+            e.target.value=n===0?"":String(n);
             onChange(n);
           }}
           style={{flex:1,border:"none",padding:"8px 9px",fontSize:15,background:"#fff",color:G.text,outline:"none",minWidth:0}}
@@ -301,13 +301,13 @@ function MonthlyTab({state,update}){
   const totalOut = VALID_EXP_KEYS.reduce((s,k)=>s+(expense[k]||0),0);
   const totalRes = Object.values(reserve).reduce((s,v)=>s+v,0);
 
-  // Row_ 為 inline helper（非 component），直接 return JSX array
+  // Row_：包成 memo 元件，key 加月份避免跨月重用同一 input DOM
   const Row_=({k,label,section="expense"})=>{
     const val = section==="expense" ? (expense[k]||0) : section==="reserve" ? (reserve[k]||0) : (income[k]||0);
     const ck  = checked[k]||false;
     return(
-      <div key={k} style={{display:"grid",gridTemplateColumns:"1fr 28px",alignItems:"end",gap:8,marginBottom:9}}>
-        <NI label={label} value={val} onChange={v=>setField(section,k,v)} />
+      <div style={{display:"grid",gridTemplateColumns:"1fr 28px",alignItems:"end",gap:8,marginBottom:9}}>
+        <NI key={`${m}-${section}-${k}`} label={label} value={val} onChange={v=>setField(section,k,v)} />
         <div style={{paddingBottom:2,display:"flex",justifyContent:"center"}}>
           <button onClick={()=>setChecked(k,!ck)} style={{
             width:26,height:26,borderRadius:7,flexShrink:0,
